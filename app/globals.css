@@ -1,0 +1,164 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+/* ---------- Theme ----------
+   UI colours are CSS variables (used through tailwind.config.ts). The dark theme only
+   redefines them; <html data-theme="…"> is set before first paint by a script in layout.tsx.
+   The map keeps its own paper-like colours in both themes so every layer stays readable. */
+:root {
+  color-scheme: light;
+  --c-canvas: #f3f5f8;
+  --c-surface: #ffffff;
+  --c-hover: #eef2f7;
+  --c-track: #cbd5e1;
+  --c-ink: #17212e;
+  --c-muted: #5d6a7a;
+  --c-rule: #dde3ea;
+  --c-accent: #2457d6;
+  --c-accent-dark: #1b44ab;
+  --c-accent-soft: #e8eefc;
+
+  /* Map surface */
+  --ocean: #eaf2f7;
+  --land: #ddd8ca;
+  --land-edge: #a8a291;
+  --halo: rgba(255, 255, 255, 0.9);
+  --globe-shadow: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.22));
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-canvas: #0a101c;
+  --c-surface: #121a2b;
+  --c-hover: #1c2740;
+  --c-track: #3b4a66;
+  --c-ink: #e7ecf4;
+  --c-muted: #9aa8bc;
+  --c-rule: #25324a;
+  --c-accent: #7ea2ff;
+  --c-accent-dark: #b6caff;
+  --c-accent-soft: #1b2b52;
+
+  /* The globe floats in the dark with a faint atmosphere glow. */
+  --globe-shadow: drop-shadow(0 0 16px rgba(126, 162, 255, 0.35));
+}
+
+html {
+  scrollbar-gutter: stable;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--c-canvas);
+  color: var(--c-ink);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s, color 0.25s;
+}
+
+/* One visible focus style for every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* Respect the "reduce motion" system setting. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Map SVG (drawn by lib/map-engine.ts) ---------- */
+.world-map {
+  display: block;
+  max-width: 100%;
+  touch-action: none;            /* gestures go to the map: drag, pinch */
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.world-map.globe { cursor: grab; }
+.world-map.dragging { cursor: grabbing; }
+.world-map:focus-visible { outline-offset: -3px; border-radius: 12px 12px 0 0; }
+
+.world-map .sphere { fill: var(--ocean); }
+.world-map.globe .sphere { filter: var(--globe-shadow); }
+.world-map .sphere-outline { fill: none; stroke: #8a96a4; stroke-width: 1; pointer-events: none; }
+.world-map .sphere-shade { display: none; pointer-events: none; }
+.world-map.globe .sphere-shade { display: inline; }
+
+.world-map .country { fill: var(--land); stroke: var(--land-edge); stroke-width: 0.5; stroke-linejoin: round; }
+.world-map .country.hot { fill: #cbc4b0; }
+.world-map .line, .world-map .arrow { fill: none; pointer-events: none; }
+
+/* Wide invisible stroke that makes thin lines easy to hover or tap; it glows when active. */
+.world-map .hit-line { fill: none; stroke-width: 14; stroke-opacity: 0; stroke-linecap: round; pointer-events: stroke; }
+.world-map .feat.hot > .hit-line { stroke-opacity: 0.22; }
+.world-map .band { fill-opacity: var(--fo, 0.2); pointer-events: fill; }
+.world-map .feat.hot > .band { fill-opacity: calc(var(--fo, 0.2) + 0.16); }
+
+.world-map .pin { fill: #111827; stroke: #fff; stroke-width: 1.5; pointer-events: none; }
+.world-map .night-inner { pointer-events: none; }
+.world-map .sun-glow { opacity: 0.3; pointer-events: none; }
+.world-map .sun-disc { stroke: #fff; stroke-width: 2; cursor: help; }
+.world-map .feat.hot > .sun-disc { stroke-width: 3.5; }
+
+/* Crosshair at the map centre: only while the map has keyboard focus. */
+.world-map .crosshair { display: none; pointer-events: none; fill: none; stroke: #111827; stroke-width: 1.5; }
+.world-map:focus-visible .crosshair { display: inline; }
+
+/* Legend / search spotlight: everything except the chosen features fades back. */
+.world-map .feat, .world-map .arrow { transition: opacity 0.2s; }
+.world-map.spotlight .feat:not(.lit):not(.country), .world-map.spotlight .arrow:not(.lit) { opacity: 0.1; }
+.world-map.spotlight .feat.lit > .hit-line { stroke-opacity: 0.25; }
+.world-map.spotlight .feat.lit > .band { fill-opacity: calc(var(--fo, 0.2) + 0.2); }
+.world-map.spotlight .country.lit { fill: #b9ae8f; stroke: #5f5a4c; stroke-width: 1.2; }
+
+/* Labels: text with a light halo so it stays readable over any layer. */
+.world-map .lbl {
+  font-size: 10.5px; font-weight: 600; pointer-events: none;
+  paint-order: stroke; stroke: var(--halo); stroke-width: 3px; stroke-linejoin: round;
+}
+.world-map .lbl.small { font-size: 9.5px; font-weight: 500; }
+.world-map .lbl.caps { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.world-map .lbl.italic { font-style: italic; font-weight: 500; font-size: 10px; }
+.world-map .lbl.hit { pointer-events: auto; cursor: help; }
+.world-map.compact .lbl { font-size: 9px; }
+.world-map.compact .lbl.caps, .world-map.compact .lbl.small { font-size: 8px; letter-spacing: 0.04em; }
+.world-map .edge .lbl { fill: #5d6a7a; font-weight: 500; font-size: 9.5px; }
+/* On flat maps the degree labels sit in the margin, on the card, so they follow the theme. */
+.world-map:not(.globe) .edge .lbl { fill: var(--c-muted); stroke: none; }
+
+/* "Larger labels" toggle */
+.world-map.big-labels .lbl { font-size: 13px; }
+.world-map.big-labels .lbl.small,
+.world-map.big-labels .lbl.caps { font-size: 11.5px; }
+.world-map.big-labels .lbl.italic { font-size: 12.5px; }
+.world-map.big-labels .edge .lbl { font-size: 11.5px; }
+.world-map.big-labels.compact .lbl { font-size: 11px; }
+.world-map.big-labels.compact .lbl.caps, .world-map.big-labels.compact .lbl.small { font-size: 10px; }
+
+/* ---------- Tooltip (components/MapTooltip.tsx) ---------- */
+.map-tooltip {
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+  pointer-events: none;
+}
+.map-tooltip[data-open="true"] { opacity: 1; transform: none; }
+.map-tooltip[data-open="true"][data-sticky="true"] { pointer-events: auto; }
+
+/* ---------- Range sliders ---------- */
+input[type="range"] { accent-color: var(--c-accent); }
+
+/* ---------- Help dialog (components/HelpDialog.tsx) ---------- */
+dialog.help-dialog { opacity: 0; transform: translateY(8px) scale(0.98); transition: opacity 0.2s ease-out, transform 0.2s ease-out; }
+dialog.help-dialog[open] { opacity: 1; transform: none; }
+@starting-style { dialog.help-dialog[open] { opacity: 0; transform: translateY(8px) scale(0.98); } }
+dialog.help-dialog::backdrop { background: rgba(8, 13, 24, 0.55); }
+
+/* ---------- Toast ---------- */
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.toast { animation: toast-in 0.2s ease-out both; }

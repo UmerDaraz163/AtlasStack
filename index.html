@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Geographic Reference Map</title>
+<style>
+  /* ---------- Page theme ---------- */
+  :root {
+    --bg: #f3f5f8;
+    --card: #ffffff;
+    --ink: #17212e;
+    --muted: #5d6a7a;
+    --rule: #dde3ea;
+    --accent: #2457d6;
+    --ocean: #eaf2f7;
+    --land: #ddd8ca;
+    --land-edge: #a8a291;
+    --halo: rgba(255, 255, 255, .9);
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html { scrollbar-gutter: stable; }
+  body {
+    margin: 0;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+
+  /* ---------- Header ---------- */
+  .page-head { max-width: 1500px; margin: 0 auto; padding: 22px 20px 6px; }
+  .page-head h1 { margin: 0 0 4px; font-size: 24px; letter-spacing: -.01em; }
+  .page-head p { margin: 0; color: var(--muted); max-width: 90ch; }
+  .page-head kbd {
+    font: inherit; font-size: 12px; padding: 0 5px; border: 1px solid var(--rule);
+    border-radius: 4px; background: var(--card);
+  }
+
+  /* ---------- Layout: sidebar + main column ---------- */
+  .layout {
+    max-width: 1500px; margin: 0 auto; padding: 14px 20px 32px;
+    display: grid; grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+    gap: 16px; align-items: start;
+  }
+  .side-col, .main-col { display: grid; gap: 16px; min-width: 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 12px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .07em;
+  }
+  @media (max-width: 880px) {
+    .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 12px 24px; }
+    .main-col { order: -1; }            /* map first on small screens */
+    .page-head { padding: 16px 12px 4px; }
+    .page-head h1 { font-size: 20px; }
+  }
+
+  /* ---------- Control panel (web form) ---------- */
+  #controls fieldset { border: 0; margin: 0 0 12px; padding: 0; }
+  #controls legend { padding: 0; margin-bottom: 4px; font-weight: 600; font-size: 13px; }
+  #controls label.check {
+    display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer;
+  }
+  #controls input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+  #controls select, #controls button, .zoom-btns button {
+    font: inherit; color: inherit; background: var(--card);
+    border: 1px solid var(--rule); border-radius: 8px;
+  }
+  #controls select { width: 100%; padding: 6px 8px; }
+  #controls select { margin-bottom: 12px; }
+  #controls button { cursor: pointer; }
+  #controls button.wide { width: 100%; padding: 6px 8px; }
+  #controls button:hover, .zoom-btns button:hover { background: #f1f4f8; }
+  #controls label.field { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  /* Sun & seasons block */
+  #sun-readout { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+  #controls label.slider { display: grid; grid-template-columns: 5.2em 1fr; align-items: center; gap: 8px; font-size: 12.5px; }
+  #controls input[type="range"] { width: 100%; margin: 3px 0; accent-color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  #controls .chips button { padding: 2px 9px; font-size: 12px; border-radius: 999px; }
+
+  /* ---------- Map ---------- */
+  .map-card { padding: 0; overflow: hidden; }
+  #map { position: relative; width: 100%; }
+  #map svg { display: block; max-width: 100%; touch-action: none; cursor: crosshair; user-select: none; }
+  #map svg.globe { cursor: grab; }
+  #map svg.dragging { cursor: grabbing; }
+  .map-foot {
+    display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center;
+    padding: 6px 14px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 12px;
+  }
+  #readout { min-width: 15ch; font-variant-numeric: tabular-nums; }
+  #status { flex: 1; }
+  .zoom-btns { display: flex; gap: 4px; }
+  .zoom-btns button { width: 28px; height: 28px; padding: 0; font-size: 16px; line-height: 1; cursor: pointer; color: var(--ink); }
+
+  /* SVG marks */
+  .sphere { fill: var(--ocean); }
+  .sphere-outline { fill: none; stroke: #8a96a4; stroke-width: 1; pointer-events: none; }
+  .sphere-shade { display: none; pointer-events: none; }
+  svg.globe .sphere-shade { display: inline; }
+  svg.globe .sphere { filter: drop-shadow(0 6px 14px rgba(15, 23, 42, .22)); }
+  .sun-glow { opacity: .3; pointer-events: none; }
+  .sun-disc { stroke: #fff; stroke-width: 2; cursor: help; }
+  .feat.hot > .sun-disc { stroke-width: 3.5; }
+  /* Legend spotlight: everything except the chosen features fades back */
+  .feat, .arrow { transition: opacity .15s; }
+  svg.spotlight .feat:not(.lit):not(.country), svg.spotlight .arrow:not(.lit) { opacity: .1; }
+  svg.spotlight .feat.lit > .hit-line { stroke-opacity: .25; }
+  svg.spotlight .feat.lit > .band { fill-opacity: calc(var(--fo, .2) + .2); }
+  .country { fill: var(--land); stroke: var(--land-edge); stroke-width: .5; stroke-linejoin: round; }
+  .country.hot { fill: #cbc4b0; }
+  .line, .arrow { fill: none; pointer-events: none; }
+  /* Wide invisible stroke that makes thin lines easy to hover; it glows when hovered. */
+  .hit-line { fill: none; stroke-width: 12; stroke-opacity: 0; stroke-linecap: round; pointer-events: stroke; }
+  .feat.hot > .hit-line { stroke-opacity: .22; }
+  .band { fill-opacity: var(--fo, .2); pointer-events: fill; }
+  .feat.hot > .band { fill-opacity: calc(var(--fo, .2) + .16); }
+  .pin { fill: #111827; stroke: #fff; stroke-width: 1.5; pointer-events: none; }
+  .lbl {
+    font-size: 10.5px; font-weight: 600; pointer-events: none;
+    paint-order: stroke; stroke: var(--halo); stroke-width: 3px; stroke-linejoin: round;
+  }
+  .lbl.small { font-size: 9.5px; font-weight: 500; }
+  .lbl.caps { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .lbl.italic { font-style: italic; font-weight: 500; font-size: 10px; }
+  .lbl.hit { pointer-events: auto; cursor: help; }
+  svg.compact .lbl { font-size: 9px; }
+  svg.compact .lbl.caps, svg.compact .lbl.small { font-size: 8px; letter-spacing: .04em; }
+  .edge .lbl { fill: var(--muted); font-weight: 500; font-size: 9.5px; }
+  svg:not(.globe) .edge .lbl { stroke: none; }
+
+  /* ---------- Tooltip ---------- */
+  .tooltip {
+    position: fixed; z-index: 50; left: 0; top: 0; max-width: min(330px, calc(100vw - 16px));
+    padding: 10px 12px; background: #111a26; color: #f3f6fa;
+    border-radius: 10px; box-shadow: 0 8px 28px rgba(15, 23, 42, .28);
+    font-size: 12.5px; line-height: 1.45; pointer-events: none;
+    opacity: 0; transition: opacity .08s;
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .also { margin-top: 8px; padding-top: 7px; border-top: 1px solid rgba(255, 255, 255, .16); }
+  .tooltip .also-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #9fb0c3; }
+  .tooltip .dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, .4); }
+  .tooltip .also-row { display: flex; gap: 6px; align-items: baseline; }
+  .tooltip .also-row span:last-child { color: #9fb0c3; }
+  .tooltip .where { margin-top: 7px; color: #9fb0c3; font-size: 11.5px; }
+
+  /* Feature card: shared by tooltip and details panel */
+  .fc-name { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 14px; }
+  .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .fc dl { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 5px 0; }
+  .fc dt { opacity: .7; }
+  .fc dd { margin: 0; }
+  .fc p { margin: 0; }
+
+  /* ---------- Details panel ---------- */
+  #details .hint { color: var(--muted); margin: 0; }
+  #details .where { color: var(--muted); margin: 0 0 8px; }
+  #details .cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  #details .fc { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; }
+
+  /* ---------- Legend ---------- */
+  #legend h3 { margin: 12px 0 4px; font-size: 13px; }
+  #legend h3:first-of-type { margin-top: 0; }
+  #legend ul { list-style: none; margin: 0; padding: 0; }
+  #legend .legend-hint { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  #legend button.row {
+    display: flex; align-items: center; gap: 8px; width: calc(100% + 12px); margin: 0 -6px; padding: 3px 6px;
+    border: 0; border-radius: 6px; background: none; font: inherit; font-size: 12.5px; color: inherit;
+    text-align: left; cursor: pointer;
+  }
+  #legend button.row:hover, #legend button.row:focus-visible { background: #eef2f7; }
+  #legend svg { flex: none; }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <h1>World Geographic Reference Map</h1>
+  <p>
+    <strong>Drag</strong> the globe to spin it and scroll or pinch to zoom.
+    <strong>Hover</strong> any line or region to see its name, classification, coordinates and purpose;
+    <strong>click</strong> to pin the full description below the map.
+    Use the control panel to switch layers, move the Sun through the year, or change to a flat map.
+  </p>
+</header>
+
+<main class="layout">
+  <!-- Sidebar: control form + legend (both generated from the data arrays in the script) -->
+  <div class="side-col">
+    <section class="card" aria-labelledby="controls-title">
+      <h2 id="controls-title">Controls</h2>
+      <form id="controls"></form>
+    </section>
+    <section class="card" aria-labelledby="legend-title">
+      <h2 id="legend-title">Legend</h2>
+      <div id="legend"></div>
+    </section>
+  </div>
+
+  <!-- Main column: map + pinned details -->
+  <div class="main-col">
+    <section class="card map-card">
+      <div id="map">
+      </div>
+      <div class="map-foot">
+        <span id="readout">Cursor: —</span>
+        <span id="status">Loading country outlines…</span>
+        <span class="zoom-btns">
+          <button type="button" id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button type="button" id="zoom-out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+          <button type="button" id="zoom-reset" aria-label="Reset view" title="Reset view">&#8962;</button>
+        </span>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="details-title">
+      <h2 id="details-title">Details</h2>
+      <div id="details" aria-live="polite"></div>
+    </section>
+  </div>
+</main>
+
+<div id="tooltip" class="tooltip" role="tooltip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script>
+(() => {
+'use strict';
+
+if (!window.d3 || !window.topojson) {
+  document.getElementById('status').textContent = 'Could not load D3 / TopoJSON from the CDN — check your connection.';
+  return;
+}
+
+/* ======================================================================
+   1. DEFINITIONS — edit these arrays/objects to change what the map shows
+   ====================================================================== */
+
+const ATLAS_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+
+const TROPIC_LAT = 23.436;       // axial tilt: latitude of the tropics
+const POLAR_LAT = 66.563;        // latitude of the polar circles
+const GRATICULE_STEP = 15;       // degrees between graticule lines
+const KM_PER_DEGREE = 111.32;    // length of one degree of latitude
+
+/**
+ * Views offered in the selector. `globe: true` marks the round, rotatable Earth; the others are flat maps.
+ * `maxLat` crops a flat map (Mercator stretches to infinity at the poles).
+ */
+const PROJECTIONS = {
+  globe:           { label: 'Globe (3D) — drag to rotate', create: () => d3.geoOrthographic(), maxLat: 90, globe: true },
+  equirectangular: { label: 'Equirectangular', create: () => d3.geoEquirectangular(), maxLat: 90 },
+  mercator:        { label: 'Mercator',        create: () => d3.geoMercator(),        maxLat: 82 },
+  naturalEarth:    { label: 'Natural Earth',   create: () => d3.geoNaturalEarth1(),   maxLat: 90 }
+};
+
+/** Globe view: the [longitude, latitude] facing the viewer at start, and the auto-rotation speed. */
+const GLOBE = { startCenter: [15, 20], spinDegPerSec: 5 };
+
+/** Checkboxes of the control panel. `on` is the initial state. */
+const LAYERS = [
+  { id: 'countries', label: 'Countries',        group: 'Base map', on: true },
+  { id: 'graticule', label: 'Graticule (15°)',  group: 'Base map', on: true },
+  { id: 'special',   label: 'Special lines',    group: 'Base map', on: true },
+  { id: 'labels',    label: 'Labels',           group: 'Display',  on: true },
+  { id: 'tooltips',  label: 'Tooltips',         group: 'Display',  on: true },
+  { id: 'spin',      label: 'Auto-rotate globe', group: 'Display', on: true },
+  { id: 'climate',   label: 'Climate zones',    group: 'Info layers', on: true },
+  { id: 'pressure',  label: 'Pressure belts',   group: 'Info layers', on: false },
+  { id: 'winds',     label: 'Prevailing winds', group: 'Info layers', on: false },
+  { id: 'currents',  label: 'Ocean currents',   group: 'Info layers', on: false },
+  { id: 'timezones', label: 'Time zones',       group: 'Info layers', on: false },
+  { id: 'plates',    label: 'Tectonic plates',  group: 'Info layers', on: false },
+  { id: 'daynight',  label: 'Day & night (Sun)', group: 'Info layers', on: false }
+];
+
+/** Drawing order of the map layers, bottom to top. */
+const DRAW_ORDER = ['countries', 'climate', 'timezones', 'pressure', 'winds', 'daynight', 'graticule', 'plates', 'currents', 'special'];
+
+/** General descriptions reused by every graticule line. */
+const GRATICULE = {
+  color: '#7b8898', width: 0.7,
+  parallel: 'Latitude lines (parallels) run east–west and measure distance north or south of the Equator, from 0° at the Equator to 90° at the poles. They never meet and get shorter toward the poles.',
+  meridian: 'Longitude lines (meridians) run north–south, converge at the poles, and measure distance east or west of the Prime Meridian, from 0° to 180°. Every 15° of longitude equals one hour of solar time.'
+};
+
+/**
+ * International Date Line, simplified, north to south as [longitude, latitude].
+ * 179.99 is used instead of 180 so the line stays on one side of the map edge.
+ */
+const DATE_LINE_POINTS = [
+  [179.99, 89.9], [179.99, 75], [-169, 68], [-169, 65.5], [170, 53], [179.99, 48],
+  [179.99, 3], [-162, 7], [-150, 4], [-150, -11], [-171, -13.5], [-171, -15.5],
+  [-172.5, -17], [-172.5, -45], [179.99, -51.5], [179.99, -89.9]
+];
+
+/**
+ * Special reference lines.
+ * type: 'lat' (parallel at `value`), 'lon' (meridian at `value`) or 'path' (custom `points`).
+ * group: decides the legend section. labelAt: [lon, lat] anchor of the on-map label
+ * (`compact` is an optional shorter label used on narrow screens; the name is the default).
+ */
+const SPECIAL_LINES = [
+  { name: 'Equator', cls: 'Equator', sub: 'Major reference line · parallel', group: 'major',
+    type: 'lat', value: 0, short: '0°', coord: '0° latitude',
+    color: '#dc2626', width: 2.8, dash: null, labelAt: [-172, 0],
+    desc: '0° latitude. The great circle midway between the poles that divides Earth into the Northern and Southern Hemispheres. It is the longest parallel (about 40,075 km) and the baseline from which latitude is measured.' },
+  { name: 'Prime Meridian', cls: 'Meridian', sub: 'Major reference line', group: 'major',
+    type: 'lon', value: 0, short: '0°', coord: '0° longitude',
+    color: '#1d4ed8', width: 2.8, dash: null, labelAt: [0, -40],
+    desc: '0° longitude. Divides Earth into the Eastern and Western Hemispheres and passes through Greenwich, England. It is the baseline for measuring longitude and for Coordinated Universal Time (UTC).' },
+  { name: 'International Date Line', cls: 'Date Line', sub: 'Follows the 180° meridian, with detours', group: 'dateline',
+    type: 'path', points: DATE_LINE_POINTS, short: '≈180°', coord: '≈ 180° longitude (zigzags between 170°E and 150°W)',
+    color: '#2563eb', width: 2, dash: '7 5', labelAt: [180, 25], compact: 'Date Line',
+    desc: 'Runs roughly along 180° longitude, where the calendar date changes by one day: crossing it westward adds a day, crossing eastward subtracts one. It bends around island groups such as the Aleutians, Kiribati and Samoa so each keeps a single date. Drawn here in simplified form.' },
+  { name: 'Tropic of Cancer', cls: 'Special Circle', sub: 'Parallel of latitude', group: 'circle',
+    type: 'lat', value: TROPIC_LAT, short: '23.436°N', coord: '23.436° N latitude',
+    color: '#ea8a0c', width: 1.8, dash: '8 5', labelAt: [-172, TROPIC_LAT],
+    desc: '23.436°N — the northernmost latitude where the Sun can be directly overhead, which happens at the June solstice. It marks the northern edge of the tropics.' },
+  { name: 'Tropic of Capricorn', cls: 'Special Circle', sub: 'Parallel of latitude', group: 'circle',
+    type: 'lat', value: -TROPIC_LAT, short: '23.436°S', coord: '23.436° S latitude',
+    color: '#ea8a0c', width: 1.8, dash: '8 5', labelAt: [-172, -TROPIC_LAT],
+    desc: '23.436°S — the southernmost latitude where the Sun can be directly overhead, which happens at the December solstice. It marks the southern edge of the tropics.' },
+  { name: 'Arctic Circle', cls: 'Special Circle', sub: 'Parallel of latitude', group: 'circle',
+    type: 'lat', value: POLAR_LAT, short: '66.563°N', coord: '66.563° N latitude',
+    color: '#0891b2', width: 2.4, dash: '0.1 5', cap: 'round', labelAt: [-172, POLAR_LAT],
+    desc: '66.563°N — the southernmost latitude in the Northern Hemisphere where the Sun can remain above the horizon (midnight sun) or below it (polar night) for a full 24 hours.' },
+  { name: 'Antarctic Circle', cls: 'Special Circle', sub: 'Parallel of latitude', group: 'circle',
+    type: 'lat', value: -POLAR_LAT, short: '66.563°S', coord: '66.563° S latitude',
+    color: '#0891b2', width: 2.4, dash: '0.1 5', cap: 'round', labelAt: [-172, -POLAR_LAT],
+    desc: '66.563°S — the northernmost latitude in the Southern Hemisphere where the Sun can remain above the horizon (midnight sun) or below it (polar night) for a full 24 hours.' }
+];
+
+/**
+ * Climate zones as simplified latitude bands. `range` is degrees from the Equator and is
+ * mirrored into both hemispheres. labelLat: where the on-map label sits; labelLon is shared.
+ */
+const CLIMATE_LABEL_LON = -38;
+const CLIMATE_NOTE = ' (Simplified band: real climates also depend on altitude, ocean currents and distance from the sea.)';
+const CLIMATE_ZONES = [
+  { name: 'Tropical', range: [0, 23.5], labelLat: 8, color: '#1f9d55', opacity: 0.24,
+    desc: 'Warm year-round with little temperature change. Rainfall, not temperature, defines the seasons — wet and dry seasons. Home to rainforests, monsoon lands and savannas.' },
+  { name: 'Arid / Subtropical', range: [15, 35], labelLat: 29, color: '#e0a416', opacity: 0.26,
+    desc: 'Dry belt of hot deserts and steppes created by sinking air under the subtropical highs — for example the Sahara, Arabian, Kalahari, Atacama and Australian deserts. Overlaps the outer tropics between 15° and 23.5°.' },
+  { name: 'Temperate', range: [35, 66.5], labelLat: 50, color: '#3b7ddd', opacity: 0.18,
+    desc: 'Moderate temperatures with four distinct seasons. Weather is driven by the westerlies and travelling storm systems; includes Mediterranean, oceanic and continental climates.' },
+  { name: 'Polar', range: [66.5, 90], labelLat: 78, color: '#8b7fd6', opacity: 0.24,
+    desc: 'Very cold all year, with long dark winters and brief cool summers. Landscapes of ice caps and treeless tundra; precipitation is low.' }
+];
+
+/** Pressure belts (dashed bands). kind: 'low' or 'high'. */
+const PRESSURE_LABEL_LON = 85;
+const PRESSURE_STYLE = {
+  low:  { label: 'Low-pressure belt',  color: '#7c3aed' },
+  high: { label: 'High-pressure belt', color: '#b45309' }
+};
+const PRESSURE_BELTS = [
+  { name: 'Equatorial Low', kind: 'low', range: [0, 5], labelLat: -2.6, coord: '≈ 5°S – 5°N',
+    desc: 'Also called the doldrums or Intertropical Convergence Zone. Intense heating makes warm, moist air rise, producing clouds and heavy rain almost daily and light, variable winds.' },
+  { name: 'Subtropical High', kind: 'high', range: [25, 35], labelLat: 30, coord: '≈ 25°–35° N and S (centred near 30°)',
+    desc: 'The horse latitudes. Air that rose at the Equator sinks here, warming and drying as it descends — clear skies, little rain and most of the world\'s great deserts.' },
+  { name: 'Subpolar Low', kind: 'low', range: [55, 65], labelLat: 60, coord: '≈ 55°–65° N and S (centred near 60°)',
+    desc: 'Warm westerlies meet cold polar air along the polar front. The warmer air is forced to rise, generating frequent storms, cloud and precipitation.' },
+  { name: 'Polar High', kind: 'high', range: [80, 90], labelLat: 85, coord: '≈ 80°–90° N and S',
+    desc: 'Very cold, dense air sinks over the poles, producing high pressure, clear skies and cold, dry conditions — the polar regions are effectively cold deserts.' }
+];
+
+/**
+ * Prevailing wind belts. `toward` gives the flow: 'west' = easterly winds blowing toward
+ * the Equator and west; 'east' = westerly winds blowing toward the pole and east.
+ */
+const WIND_STYLE = { color: '#0f766e', labelLon: 138, arrowLons: d3.range(-165, 166, 30), arrowHalfWidth: 9 };
+const WIND_BELTS = [
+  { name: 'Trade Winds', range: [0, 30], toward: 'west', fromN: 'NE', fromS: 'SE', labelLat: 26.5,
+    desc: 'Steady winds blowing east to west toward the Equator — from the north-east in the Northern Hemisphere and the south-east in the Southern. They carried sailing ships across the oceans and steer tropical storms westward.' },
+  { name: 'Westerlies', range: [30, 60], toward: 'east', fromN: 'SW', fromS: 'NW', labelLat: 56.5,
+    desc: 'Winds blowing west to east in the mid-latitudes. They move weather systems across the temperate zone and are strongest over the Southern Ocean (the "Roaring Forties").' },
+  { name: 'Polar Easterlies', range: [60, 90], toward: 'west', fromN: 'NE', fromS: 'SE', labelLat: 63,
+    desc: 'Cold, dry winds blowing east to west away from the polar highs. Where they meet the westerlies near 60° they form the stormy polar front.' }
+];
+
+/** Ocean currents: waypoints are [lon, lat] in flow direction; `anchor` (and optional `labelIndex`, the waypoint to label) position the label. */
+const CURRENT_STYLE = {
+  warm: { label: 'Warm ocean current', color: '#e8590c' },
+  cold: { label: 'Cold ocean current', color: '#1c7ed6' }
+};
+const OCEAN_CURRENTS = [
+  { name: 'Gulf Stream', temp: 'warm', region: 'North Atlantic · Florida to Newfoundland', anchor: 'start',
+    points: [[-80, 25], [-79.5, 27], [-78, 32], [-74, 36], [-65, 39], [-52, 42], [-45, 44]],
+    desc: 'Fast, warm current carrying tropical water up the east coast of North America and out across the Atlantic. It warms the eastern seaboard and, through the North Atlantic Drift, north-western Europe.' },
+  { name: 'North Atlantic Drift', temp: 'warm', region: 'North Atlantic · toward the British Isles and Norway', anchor: 'end',
+    points: [[-42, 45], [-30, 49], [-18, 54], [-8, 60], [3, 65], [10, 69]],
+    desc: 'North-eastward extension of the Gulf Stream. It keeps the British Isles and Norway far milder than other places at the same latitude and keeps Norwegian ports ice-free.' },
+  { name: 'Kuroshio Current', temp: 'warm', region: 'North-west Pacific · Taiwan to Japan', anchor: 'start',
+    points: [[124, 21], [126, 26], [131, 30], [136, 32.5], [142, 35], [152, 37]],
+    desc: 'The Pacific counterpart of the Gulf Stream. It carries warm water north past Taiwan and Japan, warming southern Japan; rich fishing grounds form where it meets the cold Oyashio.' },
+  { name: 'Brazil Current', temp: 'warm', region: 'South-west Atlantic · coast of Brazil', anchor: 'start',
+    points: [[-34, -9], [-37, -17], [-40, -24], [-46, -30], [-51, -37]],
+    desc: 'Warm current flowing south along the coast of Brazil, bringing warm, humid conditions to the shore.' },
+  { name: 'Agulhas Current', temp: 'warm', region: 'South-west Indian Ocean · south-east Africa', anchor: 'start',
+    points: [[42, -16], [38, -22], [35, -27], [30, -32], [24, -36], [19, -38]],
+    desc: 'One of the strongest currents in the world, flowing down the south-east coast of Africa. It brings warmth and rainfall to Mozambique and eastern South Africa.' },
+  { name: 'East Australian Current', temp: 'warm', region: 'South-west Pacific · eastern Australia', anchor: 'start',
+    points: [[155, -17], [155, -24], [154.5, -30], [152, -36], [150, -41]],
+    desc: 'Carries warm Coral Sea water south along eastern Australia, warming the coast as far as Tasmania.' },
+  { name: 'California Current', temp: 'cold', region: 'North-east Pacific · west coast of North America', anchor: 'end',
+    points: [[-128, 47], [-127, 41], [-124, 35], [-119, 29], [-114, 22]],
+    desc: 'Cold current flowing south along the west coast of North America. It cools the coast, produces summer fog, keeps rainfall low and, through upwelling, supports rich fisheries.' },
+  { name: 'Humboldt (Peru) Current', temp: 'cold', region: 'South-east Pacific · Chile and Peru', anchor: 'end',
+    points: [[-77, -43], [-75, -34], [-73, -25], [-75, -17], [-80, -9], [-84, -3]],
+    desc: 'Cold, nutrient-rich current flowing north along Chile and Peru. Upwelling feeds one of the most productive fisheries on Earth, and the cool, stable air helps create the Atacama Desert.' },
+  { name: 'Canary Current', temp: 'cold', region: 'North-east Atlantic · north-west Africa', anchor: 'end',
+    points: [[-12, 38], [-13, 32], [-17, 26], [-19.5, 20], [-21, 14]],
+    desc: 'Cold current flowing south-west past Portugal and north-west Africa. It cools the Canary Islands and the Moroccan coast and reinforces the dryness of the western Sahara.' },
+  { name: 'Benguela Current', temp: 'cold', region: 'South-east Atlantic · south-west Africa', anchor: 'end',
+    points: [[16, -34], [13, -28], [11, -22], [9, -15], [6, -8]],
+    desc: 'Cold current flowing north along south-west Africa. Upwelling sustains rich fisheries, while the cool, dry air contributes to the Namib Desert and its coastal fogs.' },
+  { name: 'Labrador Current', temp: 'cold', region: 'North-west Atlantic · Labrador and Newfoundland', anchor: 'start',
+    points: [[-60, 62], [-58, 57], [-53, 52], [-50, 47], [-52, 43]],
+    desc: 'Cold current flowing south from the Arctic. It carries icebergs into shipping lanes and creates dense fog where it meets the Gulf Stream off Newfoundland.' },
+  { name: 'Oyashio Current', temp: 'cold', region: 'North-west Pacific · Kamchatka to northern Japan', anchor: 'start',
+    points: [[165, 56], [160, 50], [153, 46], [148, 42], [144, 38.5]],
+    desc: 'Cold subarctic current flowing south-west past Kamchatka and the Kuril Islands. Its nutrient-rich water meets the Kuroshio east of Japan, creating a very productive fishing ground.' },
+  { name: 'West Australian Current', temp: 'cold', region: 'South-east Indian Ocean · western Australia', anchor: 'end',
+    points: [[108, -38], [108, -31], [107, -25], [104, -19], [98, -14]],
+    desc: 'Cool current flowing north off the west coast of Australia; associated with the dry climate of Western Australia.' },
+  { name: 'Antarctic Circumpolar Current', temp: 'cold', region: 'Southern Ocean · circles Antarctica near 50°–60°S', anchor: 'middle', labelIndex: 5,
+    points: [[-170, -58], [-120, -60], [-70, -59], [-20, -53], [40, -50], [100, -52], [165, -57]],
+    desc: 'Cold current driven eastward around Antarctica by the westerlies. The largest current on Earth, it links the Atlantic, Pacific and Indian Oceans and keeps Antarctica thermally isolated.' }
+];
+
+/** Time zones: 24 nominal zones of 15°. Example places observe the offset as standard time. */
+const TIME_ZONE_STYLE = { color: '#334155' };
+const TIME_ZONE_EXAMPLES = {
+  '-12': 'Baker Island', '-11': 'American Samoa', '-10': 'Honolulu', '-9': 'Anchorage',
+  '-8': 'Los Angeles, Vancouver', '-7': 'Denver, Calgary', '-6': 'Chicago, Mexico City',
+  '-5': 'New York, Lima', '-4': 'Halifax, La Paz', '-3': 'Buenos Aires, São Paulo',
+  '-2': 'South Georgia', '-1': 'Azores, Cape Verde', '0': 'London, Accra',
+  '1': 'Berlin, Lagos', '2': 'Cairo, Johannesburg', '3': 'Moscow, Nairobi',
+  '4': 'Dubai, Baku', '5': 'Karachi, Tashkent', '6': 'Dhaka, Bishkek',
+  '7': 'Bangkok, Jakarta', '8': 'Beijing, Singapore, Perth', '9': 'Tokyo, Seoul',
+  '10': 'Sydney, Vladivostok', '11': 'Solomon Islands, Nouméa', '12': 'Auckland, Fiji'
+};
+
+/**
+ * Day & night layer. `jumps` are the quick buttons (day of the year, 1–365);
+ * `playDaysPerSecond` is the speed of the "Play year" animation.
+ */
+const SUN = {
+  color: '#f59e0b', nightColor: '#0b1736', nightOpacity: 0.45, playDaysPerSecond: 24,
+  jumps: [
+    { label: 'Mar equinox', day: 79 }, { label: 'Jun solstice', day: 172 },
+    { label: 'Sep equinox', day: 266 }, { label: 'Dec solstice', day: 355 }
+  ]
+};
+
+/** Tectonic plates: label position [lon, lat] and description. */
+const PLATE_LABEL_COLOR = '#6b2f0f';
+const TECTONIC_PLATES = [
+  { name: 'Pacific Plate', rank: 'Major plate', label: [-150, 12], region: 'Most of the Pacific Ocean floor',
+    desc: 'The largest tectonic plate and almost entirely oceanic. Subduction along its edges forms the volcanic and earthquake-prone "Ring of Fire".' },
+  { name: 'North American Plate', rank: 'Major plate', label: [-100, 47], region: 'North America, Greenland, western North Atlantic, north-east Siberia',
+    desc: 'Carries North America, Greenland and the western half of the North Atlantic. Its eastern edge is the Mid-Atlantic Ridge; its western edge includes the San Andreas Fault.' },
+  { name: 'Eurasian Plate', rank: 'Major plate', label: [78, 54], region: 'Europe and most of Asia',
+    desc: 'Carries most of Europe and Asia. It collides with the African, Arabian and Indian plates along the Alpine–Himalayan mountain belt.' },
+  { name: 'African Plate', rank: 'Major plate', label: [20, 6], region: 'Africa and surrounding ocean floor',
+    desc: 'Carries Africa and the surrounding sea floor. It is slowly splitting along the East African Rift into Nubian and Somali parts.' },
+  { name: 'Indo-Australian Plate', rank: 'Major plate', label: [104, -27], region: 'India, Australia and much of the Indian Ocean',
+    desc: 'Carries India, Australia and much of the Indian Ocean; often treated as separate Indian and Australian plates. Its northward push built the Himalaya.' },
+  { name: 'Antarctic Plate', rank: 'Major plate', label: [45, -74], region: 'Antarctica and the Southern Ocean',
+    desc: 'Carries Antarctica and the surrounding Southern Ocean floor. It is almost completely ringed by spreading ridges.' },
+  { name: 'South American Plate', rank: 'Major plate', label: [-54, -14], region: 'South America and the western South Atlantic',
+    desc: 'Carries South America and the western South Atlantic. The Nazca Plate dives beneath its western edge, raising the Andes.' },
+  { name: 'Nazca Plate', rank: 'Minor plate', label: [-93, -19], region: 'South-east Pacific, off South America',
+    desc: 'Oceanic plate that is subducting beneath South America along the Peru–Chile Trench.' },
+  { name: 'Arabian Plate', rank: 'Minor plate', label: [47, 23], region: 'Arabian Peninsula',
+    desc: 'Pulling away from Africa along the Red Sea and pushing into Eurasia, raising the Zagros Mountains.' },
+  { name: 'Cocos Plate', rank: 'Minor plate', label: [-97, 8.5], region: 'Eastern Pacific, off Central America',
+    desc: 'Small oceanic plate subducting beneath Central America, feeding its chain of volcanoes.' },
+  { name: 'Caribbean Plate', rank: 'Minor plate', label: [-74, 15], region: 'Caribbean Sea and Central America',
+    desc: 'Small plate between North and South America, bounded by the Lesser Antilles volcanic arc in the east.' },
+  { name: 'Philippine Sea Plate', rank: 'Minor plate', label: [133, 17], region: 'Western Pacific, east of the Philippines',
+    desc: 'Oceanic plate wedged between the Pacific and Eurasian plates and bordered by deep trenches on both sides.' }
+];
+
+/** Plate-boundary types, used for colour, legend and tooltip text. */
+const BOUNDARY_TYPES = {
+  divergent:  { label: 'Plate boundary — divergent',  color: '#c2185b', dash: null,
+    desc: 'Divergent boundary: the plates move apart and new crust forms along a spreading ridge or rift valley.' },
+  convergent: { label: 'Plate boundary — convergent', color: '#7f1d1d', dash: null,
+    desc: 'Convergent boundary: the plates collide; one is forced beneath the other or mountains are pushed up, with deep trenches, volcanoes and strong earthquakes.' },
+  transform:  { label: 'Plate boundary — transform',  color: '#4d7c0f', dash: null,
+    desc: 'Transform boundary: the plates slide past each other along faults, causing frequent earthquakes.' },
+  diffuse:    { label: 'Plate boundary — diffuse',    color: '#6b7280', dash: '4 3',
+    desc: 'Diffuse boundary: a broad or poorly defined zone of deformation rather than a single sharp line.' }
+};
+
+/** Simplified plate boundaries as [lon, lat] polylines. `note` is optional extra text. */
+const PLATE_BOUNDARIES = [
+  { name: 'Mid-Atlantic Ridge (north)', type: 'divergent', plates: 'North American – Eurasian',
+    note: 'It rises above sea level in Iceland.',
+    points: [[-5, 83], [5, 79], [7, 74], [-8, 71], [-17, 66.5], [-22, 64], [-30, 59], [-35, 53], [-30, 48], [-28, 43], [-29, 39]] },
+  { name: 'Gakkel Ridge & Chersky zone', type: 'diffuse', plates: 'North American – Eurasian',
+    note: 'A slow Arctic spreading ridge that passes into a broad boundary zone across north-east Siberia to Japan.',
+    points: [[-5, 83], [15, 85], [40, 86.5], [65, 86.5], [90, 85], [110, 81], [125, 78], [130, 72], [140, 66], [145, 60], [143, 52], [141, 45], [139.5, 39], [139, 35]] },
+  { name: 'Mid-Atlantic Ridge (central)', type: 'divergent', plates: 'North American – African',
+    points: [[-29, 39], [-37, 34], [-44, 27], [-46, 20], [-45, 15]] },
+  { name: 'Mid-Atlantic Ridge (south)', type: 'divergent', plates: 'South American – African',
+    note: 'South America and Africa have been separating here for about 130 million years.',
+    points: [[-45, 15], [-42, 11], [-33, 5], [-25, 1], [-15, -2], [-12, -8], [-14, -18], [-13, -28], [-15, -38], [-10, -47], [-1, -55]] },
+  { name: 'North American – South American boundary', type: 'diffuse', plates: 'North American – South American',
+    points: [[-45, 15], [-52, 15], [-58.5, 14.5]] },
+  { name: 'Azores–Gibraltar & Mediterranean belt', type: 'convergent', plates: 'African – Eurasian',
+    note: 'Responsible for the Alps, the Atlas Mountains and the volcanoes and earthquakes of the Mediterranean.',
+    points: [[-29, 39], [-20, 37], [-10, 36], [-5, 36], [5, 37], [12, 37.5], [16, 38], [20, 36], [24, 34.5], [28, 35], [32, 35], [36, 36.5]] },
+  { name: 'Zagros–Makran collision zone', type: 'convergent', plates: 'Arabian – Eurasian',
+    points: [[36, 36.5], [41, 38], [45, 37], [48, 33], [52, 28.5], [57, 26.5], [62, 25], [66, 25]] },
+  { name: 'Himalayan Front', type: 'convergent', plates: 'Indo-Australian (Indian) – Eurasian',
+    note: 'A continental collision that raised the Himalaya and the Tibetan Plateau.',
+    points: [[66, 25], [67, 30], [71, 34.5], [74, 35.5], [78, 32], [81, 30], [85, 28], [89, 27.5], [93, 28], [96.5, 28.5]] },
+  { name: 'Sunda (Java) Trench', type: 'convergent', plates: 'Indo-Australian – Eurasian',
+    note: 'Source of the 2004 Indian Ocean earthquake and tsunami.',
+    points: [[96.5, 28.5], [95, 25], [93.5, 21], [93, 17], [92, 12], [93, 8], [95, 4], [97, 0], [100, -4], [104, -8], [110, -10.5], [117, -11.5], [122, -11], [127, -9], [131, -7.5], [134, -5], [138, -2.5]] },
+  { name: 'New Guinea–Solomon–Vanuatu trenches', type: 'convergent', plates: 'Indo-Australian – Pacific',
+    points: [[138, -2.5], [143, -3], [148, -5.5], [152, -7], [155, -8], [160, -11], [165, -12], [167, -16], [169, -21], [172, -23], [176, -18], [-179, -15], [-173, -15]] },
+  { name: 'Tonga–Kermadec Trench & Alpine Fault', type: 'convergent', plates: 'Pacific – Indo-Australian',
+    note: 'The Tonga Trench is the second-deepest on Earth; the boundary crosses New Zealand as the Alpine Fault.',
+    points: [[-173, -15], [-172.5, -20], [-175.5, -28], [-178, -34], [179, -38], [177.5, -40.5], [173, -42.5], [169, -44.5], [166, -46.5], [164, -50], [160, -56], [161, -61.5]] },
+  { name: 'Aleutian Trench', type: 'convergent', plates: 'Pacific – North American',
+    points: [[-144, 59.5], [-150, 57.5], [-158, 54], [-167, 52], [-177, 50.5], [176, 50.5], [168, 53], [164, 55.5]] },
+  { name: 'Kuril–Japan–Mariana trenches', type: 'convergent', plates: 'Pacific – North American / Philippine Sea',
+    note: 'Includes the Mariana Trench, the deepest point in the oceans at about 10,900 m.',
+    points: [[164, 55.5], [160, 50.5], [155, 46.5], [149, 42.5], [145, 40], [143.5, 36], [142.5, 33], [143, 28], [144, 23], [147.5, 18], [147, 13], [143, 11], [139, 9], [135, 7], [133, 4], [134, 0], [138, -2.5]] },
+  { name: 'Nankai–Ryukyu–Philippine trenches', type: 'convergent', plates: 'Philippine Sea – Eurasian',
+    points: [[139, 35], [137, 33], [133, 31], [130, 28], [127, 25], [123.5, 23], [122, 22], [122.5, 19], [123.5, 16], [125.5, 13], [127, 8], [128, 3], [131, 1], [134, 0]] },
+  { name: 'Queen Charlotte, Cascadia & San Andreas', type: 'transform', plates: 'Pacific – North American',
+    note: 'Mostly transform faults, including California\'s San Andreas Fault; the Cascadia section is a subduction zone.',
+    points: [[-144, 59.5], [-138, 58.5], [-134, 54], [-130.5, 51], [-126, 48], [-125.5, 44], [-125, 40.3], [-123.5, 38.5], [-121, 36], [-118, 34.3], [-115.5, 32.5], [-113, 30], [-110, 26], [-108.5, 23], [-109, 20]] },
+  { name: 'Middle America Trench', type: 'convergent', plates: 'Cocos – North American / Caribbean',
+    points: [[-109, 20], [-106, 19], [-102, 17], [-96, 15], [-91, 13], [-87, 11], [-84, 8.5], [-82.5, 7]] },
+  { name: 'East Pacific Rise & Pacific–Antarctic Ridge', type: 'divergent', plates: 'Pacific – Cocos / Nazca / Antarctic',
+    note: 'The fastest-spreading ridge system on Earth.',
+    points: [[-109, 20], [-105, 15], [-104, 9], [-102, 2], [-103, -5], [-108, -12], [-113, -20], [-112, -28], [-111, -35], [-110, -42], [-115, -50], [-125, -55], [-140, -57], [-155, -61], [-170, -64], [178, -64.5], [168, -62.5], [161, -61.5]] },
+  { name: 'Galápagos Spreading Centre', type: 'divergent', plates: 'Cocos – Nazca',
+    points: [[-102, 2], [-95, 2.5], [-90, 1.5], [-85, 3], [-82.5, 7]] },
+  { name: 'Peru–Chile Trench', type: 'convergent', plates: 'Nazca – South American',
+    note: 'Subduction here raised the Andes and causes some of the largest earthquakes ever recorded.',
+    points: [[-82.5, 7], [-79, 5], [-80, 1], [-81.5, -3], [-80.5, -8], [-78, -13], [-74, -17.5], [-71.5, -20], [-71.5, -25], [-72.5, -30], [-73.5, -36], [-75.5, -42], [-76, -46]] },
+  { name: 'Chile Rise', type: 'divergent', plates: 'Nazca – Antarctic',
+    points: [[-111, -35], [-100, -37], [-90, -41], [-82, -44], [-76, -46]] },
+  { name: 'Scotia Arc & American–Antarctic Ridge', type: 'transform', plates: 'South American – Antarctic (Scotia)',
+    points: [[-76, -46], [-76.5, -51], [-73, -55], [-63, -55], [-50, -54], [-38, -54.5], [-28, -56], [-25, -58.5], [-27, -60.5], [-18, -60], [-8, -58], [-1, -55]] },
+  { name: 'Southwest Indian Ridge', type: 'divergent', plates: 'African – Antarctic',
+    points: [[-1, -55], [10, -53], [25, -53], [35, -45], [45, -40], [55, -34], [62, -29], [70, -25.5]] },
+  { name: 'Central Indian & Carlsberg ridges', type: 'divergent', plates: 'African – Indo-Australian',
+    points: [[70, -25.5], [68, -18], [67, -9], [68, -2], [64, 3], [60, 7], [58, 12]] },
+  { name: 'Southeast Indian Ridge', type: 'divergent', plates: 'Indo-Australian – Antarctic',
+    points: [[70, -25.5], [74, -31], [78, -38], [86, -42], [97, -47], [110, -50], [125, -50], [140, -52], [150, -58], [161, -61.5]] },
+  { name: 'Owen Fracture Zone', type: 'transform', plates: 'Arabian – Indo-Australian (Indian)',
+    points: [[58, 12], [60, 17], [63, 22], [66, 25]] },
+  { name: 'Gulf of Aden, Red Sea Rift & Dead Sea Transform', type: 'divergent', plates: 'African – Arabian',
+    note: 'Arabia is pulling away from Africa, opening the Red Sea.',
+    points: [[58, 12], [52, 14], [48, 12.5], [44, 11.8], [42, 14], [40, 17.5], [38, 21], [36, 25], [34.5, 28], [35, 30], [35.6, 33.5], [36, 36.5]] },
+  { name: 'East African Rift', type: 'divergent', plates: 'African (Nubian – Somali)',
+    note: 'A continental rift where Africa is slowly splitting apart.',
+    points: [[42, 12], [40, 9], [37.5, 5], [36, 2], [36, -2], [35, -6], [34.5, -11], [34.8, -15], [35, -19]] },
+  { name: 'Caribbean Plate margin', type: 'transform', plates: 'Caribbean – North / South American',
+    points: [[-91.5, 14.5], [-88, 16], [-83, 18], [-78, 19.5], [-72, 20], [-66, 19.7], [-61, 18], [-58.5, 14.5], [-60, 10.5], [-66, 10.5], [-72, 10.5], [-77, 8], [-79, 5]] }
+];
+
+/* ======================================================================
+   2. SMALL HELPERS
+   ====================================================================== */
+
+const RAD = Math.PI / 180;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const wrapLon = lon => ((lon + 180) % 360 + 360) % 360 - 180;
+const trimNum = (v, digits) => String(+Math.abs(v).toFixed(digits));
+const fmtLat = (v, digits = 3) => `${trimNum(v, digits)}°${v > 0 ? 'N' : v < 0 ? 'S' : ''}`;
+const fmtLon = (v, digits = 3) => {
+  const a = Math.abs(v);
+  return `${trimNum(v, digits)}°${a === 0 || a === 180 ? '' : v > 0 ? 'E' : 'W'}`;
+};
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const darker = (color, k = 0.7) => d3.color(color).darker(k).formatHex();
+
+/** Tooltip record shared by every hoverable element. `tag` links a feature to its legend row. */
+let infoCount = 0;
+const allInfos = [];
+function makeInfo(o) {
+  const info = { key: ++infoCount, coordLabel: 'Coordinate', ...o };
+  allInfos.push(info);
+  return info;
+}
+
+/** Mirror a [from, to] latitude range into both hemispheres (optionally merged across the Equator). */
+const mirrorBands = ([a, b], merge) => (a === 0 && merge ? [[-b, b]] : [[a, b], [-b, -a]]);
+
+/** Evenly spaced values from a to b (inclusive), no more than `step` apart. */
+function spaced(a, b, step) {
+  const n = Math.max(1, Math.ceil(Math.abs(b - a) / step));
+  return d3.range(n + 1).map(i => a + (b - a) * i / n);
+}
+
+/** Add points every ≤2° along a polyline so it is drawn straight in lon/lat space, wrapping at ±180°. */
+function densify(points) {
+  const out = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const [lon0, lat0] = points[i], [lon1, lat1] = points[i + 1];
+    let dLon = lon1 - lon0;
+    if (dLon > 180) dLon -= 360; else if (dLon < -180) dLon += 360;
+    const dLat = lat1 - lat0;
+    const n = Math.max(1, Math.ceil(Math.max(Math.abs(dLon), Math.abs(dLat)) / 2));
+    for (let j = 0; j < n; j++) out.push([wrapLon(lon0 + dLon * j / n), lat0 + dLat * j / n]);
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/** Catmull-Rom smoothing of waypoints in lon/lat space (ocean currents). */
+function smooth(points, steps = 8) {
+  const out = [], last = points.length - 1;
+  for (let i = 0; i < last; i++) {
+    const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(last, i + 2)];
+    for (let j = 0; j < steps; j++) {
+      const t = j / steps, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1].map(k => 0.5 * (2 * p1[k] + (p2[k] - p0[k]) * t
+        + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (3 * p1[k] - p0[k] - 3 * p2[k] + p3[k]) * t3)));
+    }
+  }
+  out.push(points[last]);
+  return out;
+}
+
+/** Approximate latitude where the Sun is overhead (solar declination, degrees) for a day of the year 1–365. */
+function solarDeclination(day) {
+  const w = 2 * Math.PI / 365.24;
+  return -Math.asin(Math.sin(TROPIC_LAT * RAD) * Math.cos(w * (day + 10) + 0.0334 * Math.sin(w * (day - 2)))) / RAD;
+}
+const fmtDay = day => d3.utcFormat('%-d %b')(new Date(Date.UTC(2025, 0, day)));
+const fmtHour = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+
+/* ======================================================================
+   3. STATE + SVG SCAFFOLD
+   ====================================================================== */
+
+const state = {
+  projection: 'globe',
+  layers: Object.fromEntries(LAYERS.map(l => [l.id, l.on])),
+  rotate: [-GLOBE.startCenter[0], -GLOBE.startCenter[1]],   // globe rotation = minus the centre [lon, lat]
+  sun: { day: 172, hour: 12 }                               // day of year and UTC hour of the day/night layer
+};
+if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) state.layers.spin = false;
+
+const MARGIN = { top: 26, right: 20, bottom: 22, left: 42 };   // room for edge labels on the flat maps
+let projection, geoPath;            // current d3 projection and path generator
+let base = null;                    // un-zoomed scale/translate of the projection
+let frame = { x0: 0, y0: 0, x1: 0, y1: 0 };   // on-screen rectangle the map is clipped to
+let width = 0, height = 0, latCap = 90;
+let globeMode = false;              // true while the orthographic globe is shown
+let viewCenter = [0, 0];            // [lon, lat] facing the viewer (globe only)
+let pinned = null;                  // [lon, lat] of the last clicked point
+const edge = {};                    // per-draw metrics used by the degree / UTC labels
+const sun = { lat: 0, lon: 0, nightGeo: null };   // current subsolar point and night hemisphere
+
+const mapEl = document.getElementById('map');
+const tooltipEl = document.getElementById('tooltip');
+const detailsEl = document.getElementById('details');
+const readoutEl = document.getElementById('readout');
+const statusEl = document.getElementById('status');
+const legendEl = document.getElementById('legend');
+
+const svg = d3.select(mapEl).append('svg')
+  .attr('role', 'img')
+  .attr('aria-label', 'World map or globe with latitude and longitude lines, climate zones and other geographic reference layers');
+const defs = svg.append('defs');
+const clipRect = defs.append('clipPath').attr('id', 'frame-clip').append('rect');
+
+// Soft light-to-shadow gradient that makes the globe look round.
+const shade = defs.append('radialGradient').attr('id', 'globe-shade').attr('cx', '36%').attr('cy', '30%').attr('r', '78%');
+shade.append('stop').attr('offset', '0%').attr('stop-color', '#fff').attr('stop-opacity', 0.25);
+shade.append('stop').attr('offset', '45%').attr('stop-color', '#fff').attr('stop-opacity', 0);
+shade.append('stop').attr('offset', '100%').attr('stop-color', '#0b1736').attr('stop-opacity', 0.34);
+
+// Everything inside gMap is clipped to the map frame.
+const gMap = svg.append('g').attr('clip-path', 'url(#frame-clip)');
+const spherePath = gMap.append('path').attr('class', 'sphere');
+const layerG = {};
+for (const id of DRAW_ORDER) layerG[id] = gMap.append('g').attr('data-layer', id);
+const sphereShade = gMap.append('path').attr('class', 'sphere-shade').attr('fill', 'url(#globe-shade)');
+const sphereOutline = gMap.append('path').attr('class', 'sphere-outline');
+const gLabels = gMap.append('g').attr('class', 'labels').attr('data-layer', 'labels');
+const pinMark = gMap.append('circle').attr('class', 'pin').attr('r', 4).style('display', 'none');
+// Degree ticks and UTC offsets: in the margins of the flat maps, on the surface of the globe.
+const gEdge = svg.append('g').attr('class', 'labels edge').attr('data-layer', 'labels');
+
+/** Arrowhead marker in a given colour. */
+function addMarker(id, color) {
+  defs.append('marker').attr('id', id).attr('viewBox', '0 0 10 10')
+    .attr('refX', 7).attr('refY', 5).attr('markerWidth', 4.5).attr('markerHeight', 4.5).attr('orient', 'auto')
+    .append('path').attr('d', 'M0,0.5L10,5L0,9.5z').attr('fill', color);
+}
+addMarker('arrow-wind', WIND_STYLE.color);
+addMarker('arrow-warm', CURRENT_STYLE.warm.color);
+addMarker('arrow-cold', CURRENT_STYLE.cold.color);
+
+/* ======================================================================
+   4. GEOMETRY HELPERS (depend on the current projection)
+   Flat maps: latitude bands and straight lines are built directly in screen space.
+   Globe: the same shapes are GeoJSON so D3 can clip them at the horizon.
+   ====================================================================== */
+
+/** Project [lon, lat] to screen. Mercator cannot project the poles, so latitude is capped. */
+function pt(lon, lat) {
+  if (state.projection === 'mercator') lat = clamp(lat, -89.5, 89.5);
+  return projection([lon, lat]);
+}
+const xy = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+
+// --- flat-map paths
+const parallelPath = lat => `M${xy(pt(-180, lat))}L${xy(pt(180, lat))}`;   // parallels are straight on all flat maps
+function meridianPath(lon) {                                               // meridians curve in Natural Earth
+  return 'M' + spaced(-90, 90, 3).map(lat => xy(pt(lon, lat))).join('L');
+}
+function bandPath(lat0, lat1, lon0 = -180, lon1 = 180) {                   // outline of a lat/lon box
+  const lats = spaced(lat0, lat1, 3);
+  return 'M' + [...lats.map(lat => xy(pt(lon0, lat))), ...lats.reverse().map(lat => xy(pt(lon1, lat)))].join('L') + 'Z';
+}
+
+// --- spherical (GeoJSON) versions
+const parallelGeo = lat => ({ type: 'LineString', coordinates: spaced(-180, 180, 2.5).map(lon => [lon, lat]) });
+const meridianGeo = lon => ({ type: 'LineString', coordinates: spaced(-90, 90, 5).map(lat => [lon, lat]) });
+function bandGeo(lat0, lat1, lon0 = -180, lon1 = 180) {
+  let rings;
+  if (lon1 - lon0 >= 360) {
+    // A belt right around the globe: one ring per edge (a polar cap has only one edge).
+    rings = [];
+    if (lat1 < 90) rings.push(spaced(-180, 180, 2.5).map(lon => [lon, lat1]));
+    if (lat0 > -90) rings.push(spaced(180, -180, 2.5).map(lon => [lon, lat0]));
+  } else {
+    const ring = [
+      ...spaced(lat0, lat1, 5).map(lat => [lon0, lat]),
+      ...(Math.abs(lat1) < 90 ? spaced(lon0, lon1, 2.5).slice(1, -1).map(lon => [lon, lat1]) : []),
+      ...spaced(lat1, lat0, 5).map(lat => [lon1, lat]),
+      ...(Math.abs(lat0) < 90 ? spaced(lon1, lon0, 2.5).slice(1, -1).map(lon => [lon, lat0]) : [])
+    ];
+    ring.push(ring[0]);
+    rings = [ring];
+  }
+  const polygon = { type: 'Polygon', coordinates: rings };
+  // D3 reads "inside" from the winding order; none of our shapes covers more than half the sphere.
+  if (d3.geoArea(polygon) > 2 * Math.PI) polygon.coordinates = rings.map(r => r.slice().reverse());
+  return polygon;
+}
+
+// --- geometry factories: return a function that gives the SVG path for the current view
+const parallelGeom = lat => { const geo = parallelGeo(lat); return () => (globeMode ? geoPath(geo) : parallelPath(lat)); };
+const meridianGeom = lon => { const geo = meridianGeo(lon); return () => (globeMode ? geoPath(geo) : meridianPath(lon)); };
+const bandGeom = (lat0, lat1, lon0, lon1) => {
+  const geo = bandGeo(lat0, lat1, lon0, lon1);
+  return () => (globeMode ? geoPath(geo) : bandPath(lat0, lat1, lon0, lon1));
+};
+const lineGeom = points => { const geo = { type: 'LineString', coordinates: points }; return () => geoPath(geo); };
+const arrowGeom = (from, to) => {                     // straight on flat maps, a great-circle arc on the globe
+  const geo = { type: 'LineString', coordinates: [from, to] };
+  return () => (globeMode ? geoPath(geo) : `M${xy(pt(from[0], from[1]))}L${xy(pt(to[0], to[1]))}`);
+};
+
+// --- label placement
+const HORIZON = 80 * RAD;   // labels closer than this to the globe's edge are hidden
+const isVisible = (lon, lat) => !globeMode || d3.geoDistance([lon, lat], viewCenter) < HORIZON;
+
+/** Screen position of a geographic point plus a pixel offset; null when it is on the far side of the globe. */
+function place(lon, lat, dx = 0, dy = 0) {
+  if (!isVisible(lon, lat)) return null;
+  const p = pt(lon, lat);
+  return [p[0] + dx, p[1] + dy];
+}
+
+/** On-screen angle (degrees) of the direction (dLon, dLat) at a point, so labels can follow curved lines. */
+function angleAt(lon, lat, dLon, dLat) {
+  const a = pt(lon - dLon / 2, lat - dLat / 2), b = pt(lon + dLon / 2, lat + dLat / 2);
+  return Math.atan2(b[1] - a[1], b[0] - a[0]) / RAD;
+}
+
+/**
+ * Longitude "columns" for the labels of latitude lines and bands.
+ * flat: fixed longitude on the flat maps. globe: degrees east of the globe's centre,
+ * so these labels stay in view while the globe turns underneath them.
+ */
+const LABEL_COLUMNS = {
+  special:  { flat: -172,               globe: -26 },
+  climate:  { flat: CLIMATE_LABEL_LON,  globe: 12 },
+  pressure: { flat: PRESSURE_LABEL_LON, globe: 40 },
+  winds:    { flat: WIND_STYLE.labelLon, globe: -50 }
+};
+function bandLabelPos(column, lat) {
+  const lon = globeMode ? viewCenter[0] + column.globe : column.flat;
+  const p = place(lon, lat);
+  return p && [p[0], p[1], globeMode ? angleAt(lon, lat, 2, 0) : 0];
+}
+
+/** Latitude for a band label; falls back to the visible part of the band when the map is cropped. */
+const labelLatFor = def => (Math.abs(def.labelLat) <= latCap - 4 ? def.labelLat : (def.range[0] + latCap) / 2);
+
+/* ======================================================================
+   5. BUILD THE LAYERS (elements are created once; draw() only updates geometry)
+   Every element with class "dyn" has a datum with geom() → SVG path string.
+   Every element with class "hit" has a datum with .info for the tooltip.
+   ====================================================================== */
+
+/** Line features: a visible path plus a wide transparent path that catches the pointer. */
+function addLineFeatures(parent, items) {
+  const feat = parent.selectAll(null).data(items).join('g').attr('class', 'feat');
+  feat.append('path').attr('class', 'dyn line')
+    .attr('stroke', d => d.color).attr('stroke-width', d => d.width)
+    .attr('stroke-dasharray', d => d.dash || null).attr('stroke-linecap', d => d.cap || null)
+    .attr('stroke-opacity', d => d.opacity ?? null)
+    .attr('marker-end', d => (d.marker ? `url(#${d.marker})` : null));
+  feat.append('path').attr('class', 'dyn hit hit-line').attr('stroke', d => d.color);
+}
+
+/** Band features: a filled, hoverable region. */
+function addBandFeatures(parent, items) {
+  parent.selectAll(null).data(items).join('g').attr('class', 'feat')
+    .append('path').attr('class', 'dyn hit band')
+    .attr('fill', d => d.color).style('--fo', d => d.opacity)
+    .attr('stroke', d => d.stroke || 'none').attr('stroke-width', d => d.strokeWidth || null)
+    .attr('stroke-dasharray', d => d.dash || null).attr('stroke-opacity', d => d.strokeOpacity ?? null);
+}
+
+/**
+ * Text labels. Datum: { text, pos() → [x, y, angle?] | null, anchor, dy, fill, cls, info }.
+ * Optional variants: `compact` (narrow screens), `globeText` and `globeAnchor` (globe view).
+ * `prio` ranks the labels when they collide: lower numbers win (see declutterLabels).
+ */
+function addLabels(parent, layerId, items, prio = 9) {
+  for (const d of items) d.prio = d.prio ?? prio;
+  parent.append('g').attr('data-layer', layerId)
+    .selectAll(null).data(items).join('text')
+    .attr('class', d => `lbl ${d.cls || ''}${d.info ? ' hit' : ''}`)
+    .attr('dy', d => d.dy ?? null)
+    .attr('fill', d => d.fill || null);
+}
+
+function buildGraticule() {
+  const lats = d3.range(-90 + GRATICULE_STEP, 90, GRATICULE_STEP);
+  const lons = d3.range(-180, 181, GRATICULE_STEP);
+  const style = { color: GRATICULE.color, width: GRATICULE.width, opacity: 0.75 };
+
+  const parallels = lats.map(lat => ({
+    ...style,
+    info: makeInfo({
+      name: `${fmtLat(lat)} parallel`, cls: 'Graticule: Latitude', sub: 'Parallel', tag: 'graticule',
+      coord: lat === 0 ? '0° latitude' : `${Math.abs(lat)}° ${lat > 0 ? 'N' : 'S'} latitude`, color: GRATICULE.color,
+      desc: GRATICULE.parallel + (lat === 0
+        ? ' This parallel is the Equator.'
+        : ` This one lies about ${Math.round(Math.abs(lat) * KM_PER_DEGREE).toLocaleString('en-US')} km ${lat > 0 ? 'north' : 'south'} of the Equator.`)
+    }),
+    geom: parallelGeom(lat)
+  }));
+
+  const meridians = lons.map(lon => {
+    const a = Math.abs(lon);
+    const extra = a === 0 ? ' This meridian is the Prime Meridian.'
+      : a === 180 ? ' This is the antimeridian, opposite the Prime Meridian; the International Date Line roughly follows it.'
+      : ` Solar time here is ${plural(a / 15, 'hour')} ${lon > 0 ? 'ahead of' : 'behind'} Greenwich.`;
+    return {
+      ...style,
+      info: makeInfo({
+        name: `${fmtLon(lon)} meridian`, cls: 'Graticule: Longitude', sub: 'Meridian', tag: 'graticule',
+        coord: a === 0 || a === 180 ? `${a}° longitude` : `${a}° ${lon > 0 ? 'E' : 'W'} longitude`, color: GRATICULE.color,
+        desc: GRATICULE.meridian + extra
+      }),
+      geom: meridianGeom(lon)
+    };
+  });
+  addLineFeatures(layerG.graticule, [...parallels, ...meridians]);
+
+  // Degree labels. The step widens automatically when labels would collide.
+  // Flat maps: in the margins. Globe: along the central meridian and a reference parallel.
+  const latLabels = lats.map(lat => ({
+    text: fmtLat(lat), anchor: 'end', globeAnchor: 'start',
+    pos: () => {
+      if (lat % edge.latStep !== 0) return null;
+      if (globeMode) return place(viewCenter[0], lat, 4, -3);
+      const y = pt(0, lat)[1];
+      if (y < frame.y0 - 1 || y > frame.y1 + 1) return null;
+      return [Math.max(frame.x0, pt(-180, lat)[0]) - 5, y + 3.5];
+    }
+  }));
+  const lonLabels = lons.map(lon => ({
+    text: fmtLon(lon),
+    pos: () => {
+      if (lon % edge.lonStep !== 0) return null;
+      if (globeMode) return lon === -180 ? null : place(lon, edge.lonLabelLat, 0, 12);
+      const x = pt(lon, edge.botLat)[0];
+      return x < frame.x0 - 1 || x > frame.x1 + 1 ? null : [x, frame.y1 + 14];
+    }
+  }));
+  addLabels(gEdge, 'graticule', [...latLabels, ...lonLabels], 7);
+}
+
+function buildSpecialLines() {
+  const items = SPECIAL_LINES.map(d => ({
+    color: d.color, width: d.width, dash: d.dash, cap: d.cap,
+    geom: d.type === 'lat' ? parallelGeom(d.value) : d.type === 'lon' ? meridianGeom(d.value) : lineGeom(densify(d.points)),
+    info: makeInfo({ name: d.name, cls: d.cls, sub: d.sub, coord: d.coord, desc: d.desc, color: d.color, tag: `special:${d.name}` })
+  }));
+  addLineFeatures(layerG.special, items);
+
+  // Labels follow their line. They stay inside the frame while a flat map is zoomed,
+  // and slide along the line to stay in view while the globe turns.
+  const column = LABEL_COLUMNS.special;
+  addLabels(gLabels, 'special', SPECIAL_LINES.map(d => {
+    const label = { text: `${d.name} · ${d.short}`, compact: d.compact || d.name, dy: -5, fill: darker(d.color) };
+    if (d.type === 'lat') {
+      return { ...label, anchor: 'start', globeAnchor: 'middle', pos: () => {
+        if (globeMode) {
+          const lon = viewCenter[0] + column.globe, p = place(lon, d.value);
+          return p && [p[0], p[1], angleAt(lon, d.value, 2, 0)];
+        }
+        const p = pt(d.labelAt[0], d.value);
+        return [Math.max(p[0], frame.x0 + 6), p[1], 0];
+      } };
+    }
+    return { ...label, pos: () => {
+      const [lon, lat0] = d.labelAt;
+      if (globeMode) {
+        const lat = d.type === 'lon' ? clamp(viewCenter[1] - 22, -60, 60) : lat0;
+        const p = place(lon, lat);
+        return p && [p[0], p[1], angleAt(lon, lat, 0, 2)];
+      }
+      const p = pt(lon, lat0), m = Math.min(70, (frame.y1 - frame.y0) / 2);
+      return [p[0], clamp(p[1], frame.y0 + m, frame.y1 - m), -90];
+    } };
+  }), 0);
+}
+
+function buildClimateZones() {
+  const bands = [], labels = [];
+  for (const z of CLIMATE_ZONES) {
+    const info = makeInfo({
+      name: `${z.name} Zone`, cls: 'Climate Zone', coordLabel: 'Latitude range', tag: `climate:${z.name}`,
+      coord: `${z.range[0]}°–${z.range[1]}° N and S`, desc: z.desc + CLIMATE_NOTE, color: z.color
+    });
+    for (const [lo, hi] of mirrorBands(z.range, true)) {
+      const merged = lo < 0 && hi > 0, sign = hi > 0 ? 1 : -1;
+      bands.push({ info, color: z.color, opacity: z.opacity, geom: bandGeom(lo, hi) });
+      labels.push({
+        text: z.name, cls: 'caps', dy: 3.5, fill: darker(z.color, 1.4),
+        pos: () => bandLabelPos(LABEL_COLUMNS.climate, (merged ? 1 : sign) * labelLatFor(z))
+      });
+    }
+  }
+  addBandFeatures(layerG.climate, bands);
+  addLabels(gLabels, 'climate', labels, 1);
+}
+
+function buildPressureBelts() {
+  const bands = [], labels = [];
+  for (const b of PRESSURE_BELTS) {
+    const style = PRESSURE_STYLE[b.kind];
+    const info = makeInfo({
+      name: b.name, cls: 'Pressure Belt', sub: b.kind === 'low' ? 'Low pressure — rising air' : 'High pressure — sinking air',
+      coordLabel: 'Latitude range', coord: b.coord, desc: b.desc, color: style.color, tag: `pressure:${b.kind}`
+    });
+    for (const [lo, hi] of mirrorBands(b.range, true)) {
+      const merged = lo < 0 && hi > 0, sign = hi > 0 ? 1 : -1;
+      bands.push({ info, color: style.color, opacity: 0.13, stroke: style.color, strokeWidth: 1.2, dash: '6 4', geom: bandGeom(lo, hi) });
+      labels.push({
+        text: `${b.name} (${b.kind === 'low' ? 'L' : 'H'})`, dy: 3.5, fill: darker(style.color),
+        pos: () => bandLabelPos(LABEL_COLUMNS.pressure, merged ? b.labelLat : sign * labelLatFor(b))
+      });
+    }
+  }
+  addBandFeatures(layerG.pressure, bands);
+  addLabels(gLabels, 'pressure', labels, 3);
+}
+
+function buildWinds() {
+  const bands = [], arrows = [], labels = [];
+  const hw = WIND_STYLE.arrowHalfWidth;
+  for (const w of WIND_BELTS) {
+    const [a, b] = w.range;
+    const info = makeInfo({
+      name: w.name, cls: 'Wind Belt', sub: w.toward === 'west' ? 'Blows east → west' : 'Blows west → east',
+      coordLabel: 'Latitude range', coord: `${a}°–${b}° N and S`, desc: w.desc, color: WIND_STYLE.color, tag: 'wind'
+    });
+    for (const [lo, hi] of mirrorBands(w.range, false)) {
+      const sign = hi > 0 ? 1 : -1;
+      // The band itself is invisible until hovered; the arrows carry the visual.
+      bands.push({ info, color: WIND_STYLE.color, opacity: 0, geom: bandGeom(lo, hi) });
+      const latEq = sign * (a + 0.22 * (b - a)), latPole = sign * (b - 0.22 * (b - a));
+      for (const lon of WIND_STYLE.arrowLons) {
+        const from = w.toward === 'west' ? [lon + hw, latPole] : [lon - hw, latEq];
+        const to = w.toward === 'west' ? [lon - hw, latEq] : [lon + hw, latPole];
+        arrows.push({ tag: 'wind', geom: arrowGeom(from, to) });
+      }
+      labels.push({
+        text: `${w.name} (from ${sign > 0 ? w.fromN : w.fromS})`, compact: w.name, dy: 3.5, fill: darker(WIND_STYLE.color),
+        pos: () => bandLabelPos(LABEL_COLUMNS.winds, sign * w.labelLat)
+      });
+    }
+  }
+  addBandFeatures(layerG.winds, bands);
+  layerG.winds.append('g').selectAll('path').data(arrows).join('path')
+    .attr('class', 'dyn arrow').attr('stroke', WIND_STYLE.color).attr('stroke-width', 1.6)
+    .attr('stroke-opacity', 0.85).attr('marker-end', 'url(#arrow-wind)');
+  addLabels(gLabels, 'winds', labels, 4);
+}
+
+function buildCurrents() {
+  const items = OCEAN_CURRENTS.map(c => {
+    const style = CURRENT_STYLE[c.temp];
+    return {
+      color: style.color, width: 2, marker: `arrow-${c.temp}`, geom: lineGeom(smooth(c.points)),
+      info: makeInfo({
+        name: c.name, cls: 'Ocean Current', sub: c.temp === 'warm' ? 'Warm current' : 'Cold current',
+        coordLabel: 'Region', coord: c.region, desc: c.desc, color: style.color, tag: `current:${c.temp}`
+      })
+    };
+  });
+  addLineFeatures(layerG.currents, items);
+  addLabels(gLabels, 'currents', OCEAN_CURRENTS.map(c => {
+    const mid = c.points[c.labelIndex ?? Math.floor(c.points.length / 2)];
+    const dx = c.anchor === 'start' ? 7 : c.anchor === 'end' ? -7 : 0;
+    return {
+      text: c.name, cls: 'italic', anchor: c.anchor, fill: darker(CURRENT_STYLE[c.temp].color),
+      pos: () => place(mid[0], mid[1], dx, dx ? 3.5 : -6)
+    };
+  }), 5);
+}
+
+function buildTimeZones() {
+  const bands = [], labels = [];
+  // Offsets −12 … +12: the zone centred on 180° is split by the date line into two half-zones.
+  for (let n = -12; n <= 12; n++) {
+    const center = n * 15;
+    const lon0 = Math.max(-180, center - 7.5), lon1 = Math.min(180, center + 7.5);
+    const sign = n > 0 ? '+' : '−';
+    const name = n === 0 ? 'UTC±0' : `UTC${sign}${Math.abs(n)}`;
+    const clock = n === 0 ? 'Clocks here show UTC (Greenwich Mean Time).'
+      : `Clocks here are ${plural(Math.abs(n), 'hour')} ${n > 0 ? 'ahead of' : 'behind'} UTC.`;
+    const split = Math.abs(n) === 12
+      ? ' The 15° zone centred on 180° is split by the International Date Line into UTC+12 on its west side and UTC−12 on its east side.' : '';
+    bands.push({
+      color: TIME_ZONE_STYLE.color, opacity: n % 2 === 0 ? 0.03 : 0.12,
+      stroke: TIME_ZONE_STYLE.color, strokeWidth: 0.6, strokeOpacity: 0.35,
+      geom: bandGeom(-90, 90, lon0, lon1),
+      info: makeInfo({
+        name, cls: 'Time Zone', sub: 'Nominal 15° zone', coordLabel: 'Longitude range', tag: 'timezone',
+        coord: `${fmtLon(lon0)} – ${fmtLon(lon1)} (central meridian ${fmtLon(center)})`, color: TIME_ZONE_STYLE.color,
+        desc: `${clock} Earth turns 15° of longitude every hour, giving 24 time zones of 15° each.${split} Real zone boundaries bend to follow national borders. Standard-time examples: ${TIME_ZONE_EXAMPLES[n]}.`
+      })
+    });
+    labels.push({
+      text: n === 0 ? 'UTC' : `${sign}${Math.abs(n)}`, globeText: name, fill: TIME_ZONE_STYLE.color,
+      pos: () => {
+        if (n % edge.zoneStep !== 0) return null;
+        if (globeMode) return place((lon0 + lon1) / 2, edge.zoneLabelLat, 0, 3.5);
+        const x = pt((lon0 + lon1) / 2, edge.topLat)[0];
+        return x < frame.x0 - 1 || x > frame.x1 + 1 ? null : [x, frame.y0 - 8];
+      }
+    });
+  }
+  addBandFeatures(layerG.timezones, bands);
+  addLabels(gEdge, 'timezones', labels, 8);
+}
+
+function buildPlates() {
+  const items = PLATE_BOUNDARIES.map(b => {
+    const type = BOUNDARY_TYPES[b.type];
+    return {
+      color: type.color, width: 1.8, dash: type.dash, geom: lineGeom(densify(b.points)),
+      info: makeInfo({
+        name: b.name, cls: 'Tectonic Plate', sub: `Plate boundary · ${b.type}`, tag: `plate:${b.type}`,
+        coordLabel: 'Plates', coord: b.plates, color: type.color,
+        desc: `${type.desc}${b.note ? ' ' + b.note : ''} (Simplified outline.)`
+      })
+    };
+  });
+  addLineFeatures(layerG.plates, items);
+
+  // Plate names are hoverable labels that carry the plate descriptions.
+  addLabels(gLabels, 'plates', TECTONIC_PLATES.map(p => ({
+    text: p.name, cls: p.rank === 'Major plate' ? 'caps' : 'caps small', fill: PLATE_LABEL_COLOR,
+    prio: p.rank === 'Major plate' ? 2 : 6,
+    info: makeInfo({ name: p.name, cls: 'Tectonic Plate', sub: p.rank, coordLabel: 'Region', coord: p.region, desc: p.desc, color: PLATE_LABEL_COLOR }),
+    pos: () => place(p.label[0], p.label[1], 0, 3.5)
+  })));
+}
+
+/** Day & night: the night hemisphere, the parallel the Sun is over today, and the subsolar point. */
+function buildSun() {
+  sun.nightInfo = makeInfo({ name: 'Night side of Earth', cls: 'Day / Night', coordLabel: 'Sun overhead at', color: SUN.nightColor, tag: 'sun' });
+  sun.pathInfo = makeInfo({ name: 'Sun\'s overhead latitude', cls: 'Sun Position', sub: 'Parallel of latitude', color: SUN.color, tag: 'sun' });
+  sun.pointInfo = makeInfo({ name: 'Subsolar point', cls: 'Sun Position', sub: 'Sun directly overhead', color: SUN.color, tag: 'sun' });
+
+  addBandFeatures(layerG.daynight, [{ info: sun.nightInfo, color: SUN.nightColor, opacity: SUN.nightOpacity, geom: () => geoPath(sun.nightGeo) }]);
+  addLineFeatures(layerG.daynight, [{
+    info: sun.pathInfo, color: SUN.color, width: 1.5, dash: '2 4',
+    geom: () => (globeMode ? geoPath(parallelGeo(sun.lat)) : parallelPath(sun.lat))
+  }]);
+  sun.marker = layerG.daynight.append('g').attr('class', 'feat sun-mark').datum({ info: sun.pointInfo });
+  sun.marker.append('circle').attr('class', 'sun-glow').attr('r', 13).attr('fill', SUN.color);
+  sun.marker.append('circle').attr('class', 'hit sun-disc').attr('r', 6.5).attr('fill', SUN.color);
+  updateSun();
+}
+
+/** Recompute the Sun's position from state.sun and refresh its texts and sliders. */
+function updateSun() {
+  const { day, hour } = state.sun;
+  sun.lat = solarDeclination(day);
+  sun.lon = wrapLon((12 - hour) * 15);     // the Sun is over the meridian where it is local noon
+  sun.nightGeo = d3.geoCircle().center([sun.lon + 180, -sun.lat]).radius(90)();
+
+  const when = `${fmtDay(day)}, ${fmtHour(hour)} UTC`;
+  const where = `${fmtLat(sun.lat, 1)}, ${fmtLon(sun.lon, 1)}`;
+  const tilt = Math.abs(sun.lat), summer = sun.lat > 0 ? 'Northern' : 'Southern';
+  const season = tilt < 1
+    ? 'It is close to an equinox: the Sun is over the Equator and day and night are about 12 hours long everywhere.'
+    : `The ${summer} Hemisphere is tilted toward the Sun, so it has the longer days. Poleward of ${trimNum(90 - tilt, 1)}° ${sun.lat > 0 ? 'N' : 'S'} the Sun does not set at all today, and poleward of ${trimNum(90 - tilt, 1)}° ${sun.lat > 0 ? 'S' : 'N'} it does not rise.`;
+
+  Object.assign(sun.nightInfo, {
+    coord: `${where} (${when})`,
+    desc: `The shaded half of Earth is facing away from the Sun. Its edge, the terminator, is where sunrise and sunset are happening right now. ${season}`
+  });
+  Object.assign(sun.pathInfo, {
+    coord: `${fmtLat(sun.lat, 1)} on ${fmtDay(day)}`,
+    desc: 'As Earth rotates today, the Sun passes directly overhead at every place along this parallel. Over a year the line moves between the Tropic of Cancer (June solstice) and the Tropic of Capricorn (December solstice) — which is why the tropics sit at 23.436°.'
+  });
+  Object.assign(sun.pointInfo, {
+    coord: `${where} (${when})`,
+    desc: 'The one place on Earth where the Sun is exactly overhead at this moment and it is local noon. It travels westward 15° every hour and never leaves the belt between the two tropics.'
+  });
+  tooltipKey = '';   // tooltip text may be stale
+
+  d3.select('#sun-day').property('value', day);
+  d3.select('#sun-hour').property('value', hour);
+  d3.select('#sun-readout').text(`${when} — Sun overhead at ${where}`);
+}
+
+function setSunNow() {
+  const now = new Date();
+  const start = Date.UTC(now.getUTCFullYear(), 0, 0);
+  state.sun.day = clamp(Math.floor((now - start) / 864e5), 1, 365);
+  state.sun.hour = Math.round((now.getUTCHours() + now.getUTCMinutes() / 60) * 4) / 4 % 24;
+}
+
+/** Country outlines are loaded from world-atlas; everything else works without them. */
+function loadCountries() {
+  d3.json(ATLAS_URL).then(world => {
+    const features = topojson.feature(world, world.objects.countries).features;
+    const items = features.map(f => {
+      const c = d3.geoCentroid(f);
+      return {
+        geom: () => geoPath(f),
+        info: makeInfo({
+          name: f.properties.name, cls: 'Country', coordLabel: 'Centre',
+          coord: `≈ ${fmtLat(c[1], 0)}, ${fmtLon(c[0], 0)}`, color: '#a8a291',
+          desc: 'Country outline from Natural Earth (1:110m scale).'
+        })
+      };
+    });
+    layerG.countries.selectAll('path').data(items).join('path').attr('class', 'dyn hit feat country');
+    statusEl.textContent = 'Simplified reference layers · Country data: Natural Earth';
+    draw();
+  }).catch(() => {
+    statusEl.textContent = 'Country outlines could not be loaded — the other layers still work.';
+  });
+}
+
+/* ======================================================================
+   6. LAYOUT + DRAW
+   ====================================================================== */
+
+/** Fit the projection to the container and reset the zoom. */
+function layout() {
+  const def = PROJECTIONS[state.projection];
+  globeMode = !!def.globe;
+  width = Math.max(320, Math.floor(mapEl.clientWidth));
+  latCap = def.maxLat;
+  projection = def.create().precision(0.4);
+
+  let mapWidth;
+  if (globeMode) {
+    // A sphere centred in the panel, sized to fit the window height as well as the width.
+    const pad = 14;
+    mapWidth = clamp(Math.min(width - 2 * pad, window.innerHeight - 220), 260, 720);
+    height = Math.round(mapWidth + 2 * pad);
+    projection.scale(mapWidth / 2).translate([width / 2, height / 2]).clipAngle(90)
+      .rotate([state.rotate[0], state.rotate[1], 0]);
+    frame = { x0: 0, y0: 0, x1: width, y1: height };
+  } else {
+    mapWidth = width - MARGIN.left - MARGIN.right;
+    projection.fitWidth(mapWidth, { type: 'Sphere' });
+    const yTop = projection([0, latCap])[1], yBot = projection([0, -latCap])[1];
+    const t = projection.translate();
+    projection.translate([t[0] + MARGIN.left, t[1] - yTop + MARGIN.top]);
+    frame = { x0: MARGIN.left, y0: MARGIN.top, x1: MARGIN.left + mapWidth, y1: MARGIN.top + (yBot - yTop) };
+    height = Math.ceil(frame.y1 + MARGIN.bottom);
+  }
+  base = { scale: projection.scale(), translate: projection.translate() };
+  geoPath = d3.geoPath(projection);
+
+  svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height);
+  clipRect.attr('x', frame.x0).attr('y', frame.y0).attr('width', frame.x1 - frame.x0).attr('height', frame.y1 - frame.y0);
+
+  // Pick the label variant for this view; narrow maps get shorter, smaller labels.
+  const compact = mapWidth < (globeMode ? 420 : 620);
+  svg.classed('compact', compact).classed('globe', globeMode);
+  svg.selectAll('text.lbl')
+    .text(d => (globeMode && d.globeText) || (compact && d.compact) || d.text)
+    .attr('text-anchor', d => (globeMode && d.globeAnchor) || d.anchor || 'middle');
+
+  // Flat maps pan within the map; the globe turns freely.
+  zoom.extent([[0, 0], [width, height]])
+    .translateExtent(globeMode ? [[-Infinity, -Infinity], [Infinity, Infinity]] : [[0, 0], [width, height]]);
+  grab = { k: 1, x: 0, y: 0 };
+  svg.call(zoom.transform, d3.zoomIdentity);
+  draw();
+}
+
+/** Smallest step from `steps` whose on-screen spacing is at least `minPx`. */
+const pickStep = (steps, pxPerUnit, minPx) => steps.find(s => s * pxPerUnit >= minPx) ?? steps[steps.length - 1];
+
+/** Recompute every path and label position from the current projection. */
+function draw() {
+  if (!projection) return;
+
+  // Work out how densely the degree / UTC labels can be drawn in this view.
+  if (globeMode) {
+    viewCenter = [-state.rotate[0], -state.rotate[1]];
+    const pxPerDeg = projection.scale() * RAD;
+    edge.lonLabelLat = Math.round(clamp(viewCenter[1], -60, 60) / 30) * 30;   // parallel that carries the longitude labels
+    edge.zoneLabelLat = edge.lonLabelLat + (edge.lonLabelLat >= 60 ? -15 : 15);
+    edge.latStep = pickStep([15, 30, 45], pxPerDeg, 16);
+    edge.lonStep = pickStep([15, 30, 60, 90], pxPerDeg * Math.cos(edge.lonLabelLat * RAD), 42);
+    edge.zoneStep = pickStep([1, 2, 3, 4, 6], pxPerDeg * 15 * Math.cos(edge.zoneLabelLat * RAD), 48);
+  } else {
+    // Latitudes at the top and bottom edge of the frame (they change while zoomed).
+    const cx = (frame.x0 + frame.x1) / 2;
+    const top = projection.invert([cx, frame.y0]), bottom = projection.invert([cx, frame.y1]);
+    edge.topLat = clamp(top && isFinite(top[1]) ? top[1] : latCap, -latCap, latCap);
+    edge.botLat = clamp(bottom && isFinite(bottom[1]) ? bottom[1] : -latCap, -latCap, latCap);
+    const pxPerDegLon = lat => Math.abs(pt(15, lat)[0] - pt(0, lat)[0]) / 15;
+    edge.latStep = pickStep([15, 30, 45], Math.abs(pt(0, 15)[1] - pt(0, 0)[1]) / 15, 12);
+    edge.lonStep = pickStep([15, 30, 60, 90], pxPerDegLon(edge.botLat), 38);
+    edge.zoneStep = pickStep([1, 2, 3, 4, 6], pxPerDegLon(edge.topLat) * 15, 24);
+  }
+
+  const sphere = geoPath({ type: 'Sphere' });
+  spherePath.attr('d', sphere);
+  sphereShade.attr('d', sphere);
+  sphereOutline.attr('d', sphere);
+  gMap.selectAll('path.dyn').attr('d', d => d.geom());
+
+  svg.selectAll('text.lbl').each(function (d) {
+    const p = d.pos();
+    if (!p || !isFinite(p[0]) || !isFinite(p[1])) { this.style.display = 'none'; return; }
+    this.style.display = '';
+    this.setAttribute('transform', `translate(${p[0].toFixed(1)},${p[1].toFixed(1)})${p[2] ? ` rotate(${p[2].toFixed(1)})` : ''}`);
+  });
+  declutterLabels();
+
+  // Point markers: the Sun and the pinned (clicked) location.
+  const sunAt = place(sun.lon, sun.lat);
+  sun.marker.style('display', sunAt ? null : 'none');
+  if (sunAt) sun.marker.attr('transform', `translate(${xy(sunAt)})`);
+  const pinAt = pinned && place(pinned[0], pinned[1]);
+  pinMark.style('display', pinAt ? null : 'none');
+  if (pinAt) pinMark.attr('cx', pinAt[0]).attr('cy', pinAt[1]);
+}
+
+/**
+ * Hide labels that would overlap a higher-priority label. Zooming in spreads the
+ * labels apart (text keeps its size), so hidden ones reappear.
+ */
+function declutterLabels() {
+  const nodes = svg.selectAll('text.lbl').nodes().sort((a, b) => a.__data__.prio - b.__data__.prio);
+  for (const el of nodes) el.style.visibility = '';
+  const rects = nodes.map(el => (el.style.display === 'none' ? null : el.getBoundingClientRect()));
+  const placed = [], pad = 2;
+  nodes.forEach((el, i) => {
+    const r = rects[i];
+    if (!r || !r.width) return;        // not positioned, or inside a hidden layer
+    const clash = placed.some(q => r.left < q.right + pad && r.right > q.left - pad && r.top < q.bottom + pad && r.bottom > q.top - pad);
+    if (clash) el.style.visibility = 'hidden'; else placed.push(r);
+  });
+}
+
+/** Show or hide layers according to the checkboxes. */
+function applyVisibility() {
+  svg.selectAll('[data-layer]').style('display', function () {
+    return state.layers[this.getAttribute('data-layer')] ? null : 'none';
+  });
+  declutterLabels();
+  if (!state.layers.tooltips) hideTooltip();
+}
+
+/** Switch a layer on or off from code, keeping its checkbox in sync. */
+function setLayer(id, on) {
+  if (state.layers[id] === on) return;
+  state.layers[id] = on;
+  d3.select(`#controls input[value="${id}"]`).property('checked', on);
+  applyVisibility();
+}
+
+/* ======================================================================
+   7. ZOOM, PAN AND GLOBE ROTATION
+   The projection itself is rescaled (instead of scaling the SVG), so strokes and labels
+   keep their size. On the globe a drag turns the Earth rather than panning.
+   ====================================================================== */
+
+let grab = { k: 1, x: 0, y: 0 };    // previous zoom transform, to tell a drag from a zoom
+let dragging = false, pointerInside = false;
+
+const zoom = d3.zoom().scaleExtent([1, 8])
+  .on('start', () => { dragging = true; svg.classed('dragging', true); })
+  .on('end', () => { dragging = false; svg.classed('dragging', false); })
+  .on('zoom', event => {
+    const t = event.transform;
+    if (globeMode) {
+      if (t.k !== grab.k) {
+        projection.scale(base.scale * t.k);                       // wheel, pinch or zoom buttons
+      } else if (event.sourceEvent) {
+        const degPerPx = 1 / (projection.scale() * RAD);          // the surface follows the pointer
+        setRotation(state.rotate[0] + (t.x - grab.x) * degPerPx, state.rotate[1] - (t.y - grab.y) * degPerPx);
+      }
+      grab = { k: t.k, x: t.x, y: t.y };
+    } else {
+      projection.scale(base.scale * t.k)
+        .translate([base.translate[0] * t.k + t.x, base.translate[1] * t.k + t.y]);
+    }
+    draw();
+  });
+svg.call(zoom);
+
+function setRotation(lambda, phi) {
+  state.rotate = [wrapLon(lambda), clamp(phi, -90, 90)];
+  projection.rotate([state.rotate[0], state.rotate[1], 0]);
+}
+
+function resetView() {
+  if (globeMode) setRotation(-GLOBE.startCenter[0], -GLOBE.startCenter[1]);
+  svg.transition().duration(250).call(zoom.transform, d3.zoomIdentity);
+  draw();
+}
+
+d3.select('#zoom-in').on('click', () => svg.transition().duration(200).call(zoom.scaleBy, 1.6));
+d3.select('#zoom-out').on('click', () => svg.transition().duration(200).call(zoom.scaleBy, 1 / 1.6));
+d3.select('#zoom-reset').on('click', resetView);
+
+// Auto-rotation: turns the globe slowly; pauses while the pointer is over the map.
+let lastTick = 0;
+d3.timer(elapsed => {
+  const dt = Math.min(100, elapsed - lastTick);
+  lastTick = elapsed;
+  if (!globeMode || !state.layers.spin || dragging || pointerInside || document.hidden) return;
+  setRotation(state.rotate[0] + GLOBE.spinDegPerSec * dt / 1000, state.rotate[1]);
+  draw();
+});
+
+/* ======================================================================
+   8. TOOLTIP + DETAILS PANEL
+   ====================================================================== */
+
+/** All hoverable features under a screen point, topmost first (overlapping layers are all reported). */
+function featuresAt(clientX, clientY) {
+  const seen = new Set(), out = [];
+  for (const el of document.elementsFromPoint(clientX, clientY)) {
+    if (!el.classList || !el.classList.contains('hit')) continue;
+    const d = el.__data__;
+    if (!d || !d.info || seen.has(d.info)) continue;
+    seen.add(d.info);
+    out.push({ info: d.info, el });
+  }
+  return out;
+}
+
+/** Geographic position under the pointer, or null when it is off the Earth. */
+function lonLatAt(event) {
+  const [x, y] = d3.pointer(event, svg.node());
+  if (x < frame.x0 || x > frame.x1 || y < frame.y0 || y > frame.y1) return null;
+  const ll = projection.invert([x, y]);
+  if (!ll || !isFinite(ll[0]) || !isFinite(ll[1]) || Math.abs(ll[0]) > 180 || Math.abs(ll[1]) > 90) return null;
+  return ll;
+}
+const fmtLonLat = ll => `${fmtLat(ll[1], 1)}, ${fmtLon(ll[0], 1)}`;
+
+/** Name / classification / coordinate / description card. */
+function cardHtml(info) {
+  return `<div class="fc">
+    <div class="fc-name"><span class="dot" style="background:${info.color}"></span>${escapeHtml(info.name)}</div>
+    <dl>
+      <dt>Classification</dt><dd>${escapeHtml(info.cls)}${info.sub ? ' · ' + escapeHtml(info.sub) : ''}</dd>
+      <dt>${escapeHtml(info.coordLabel)}</dt><dd>${escapeHtml(info.coord)}</dd>
+    </dl>
+    <p>${escapeHtml(info.desc)}</p>
+  </div>`;
+}
+
+let hotEl = null, tooltipKey = '';
+function setHot(el) {
+  const target = el ? el.closest('.feat') : null;
+  if (target === hotEl) return;
+  if (hotEl) hotEl.classList.remove('hot');
+  if (target) target.classList.add('hot');
+  hotEl = target;
+}
+
+function hideTooltip() {
+  tooltipEl.classList.remove('show');
+  tooltipKey = '';
+}
+
+function onPointerMove(event) {
+  const ll = lonLatAt(event);
+  readoutEl.textContent = `Cursor: ${ll ? fmtLonLat(ll) : '—'}`;
+
+  const stack = featuresAt(event.clientX, event.clientY);
+  setHot(stack.length ? stack[0].el : null);
+  if (!state.layers.tooltips || !stack.length || dragging) { hideTooltip(); return; }
+
+  // Rebuild the tooltip only when the set of features under the pointer changes.
+  const key = stack.map(s => s.info.key).join(',');
+  if (key !== tooltipKey) {
+    tooltipKey = key;
+    const rest = stack.slice(1);
+    tooltipEl.innerHTML = cardHtml(stack[0].info) + (rest.length
+      ? `<div class="also"><div class="also-title">Also at this point — click for details</div>${rest.map(s =>
+          `<div class="also-row"><span class="dot" style="background:${s.info.color}"></span><span>${escapeHtml(s.info.name)}</span><span>${escapeHtml(s.info.cls)}</span></div>`).join('')}</div>`
+      : '');
+  }
+  tooltipEl.classList.add('show');
+
+  // Keep the tooltip inside the viewport.
+  const r = tooltipEl.getBoundingClientRect();
+  let left = event.clientX + 16, topPx = event.clientY + 16;
+  if (left + r.width > window.innerWidth - 8) left = event.clientX - r.width - 16;
+  if (topPx + r.height > window.innerHeight - 8) topPx = event.clientY - r.height - 16;
+  tooltipEl.style.left = Math.max(8, left) + 'px';
+  tooltipEl.style.top = Math.max(8, topPx) + 'px';
+}
+
+const DETAILS_HINT = '<p class="hint">Click any line or region on the map — or any row of the legend — to pin its name, classification, coordinates and description here. Where layers overlap, every feature at that point is listed.</p>';
+
+/** Fill the details panel with one card per feature. `heading` is trusted HTML. */
+function showDetails(infos, heading) {
+  detailsEl.innerHTML = infos.length
+    ? `<p class="where">${heading}</p><div class="cards">${infos.map(cardHtml).join('')}</div>`
+    : DETAILS_HINT;
+}
+
+function onClick(event) {
+  const stack = featuresAt(event.clientX, event.clientY);
+  const ll = lonLatAt(event);
+  pinned = stack.length ? ll : null;
+  showDetails(stack.map(s => s.info), `${ll ? `At ${fmtLonLat(ll)} — ` : ''}${plural(stack.length, 'feature')}`);
+  draw();
+}
+
+svg.on('pointermove', onPointerMove)
+  .on('pointerenter', () => { pointerInside = true; })
+  .on('pointerleave', () => { pointerInside = false; hideTooltip(); setHot(null); readoutEl.textContent = 'Cursor: —'; })
+  .on('pointerdown', () => { hideTooltip(); spotlight(null); })
+  .on('click', onClick);
+
+/* ======================================================================
+   9. CONTROL PANEL + LEGEND (generated from the definitions above)
+   ====================================================================== */
+
+let playTimer = null;
+
+/** Show the day/night layer after the Sun controls were used. */
+function showSun() {
+  setLayer('daynight', true);
+  updateSun();
+  draw();
+}
+
+/** Start or stop running through the year, one day per tick. */
+function togglePlay() {
+  if (playTimer) {
+    playTimer.stop();
+    playTimer = null;
+  } else {
+    setLayer('daynight', true);
+    playTimer = d3.interval(() => {
+      state.sun.day = state.sun.day % 365 + 1;
+      updateSun();
+      draw();
+    }, 1000 / SUN.playDaysPerSecond);
+  }
+  d3.select('#sun-play').text(playTimer ? '❚❚ Pause' : '▶ Play year');
+}
+
+function buildControls() {
+  const form = d3.select('#controls');
+
+  // View / projection selector
+  form.append('label').attr('class', 'field').attr('for', 'projection').text('View');
+  form.append('select').attr('id', 'projection').attr('name', 'projection')
+    .selectAll('option').data(Object.entries(PROJECTIONS)).join('option')
+    .attr('value', d => d[0]).property('selected', d => d[0] === state.projection).text(d => d[1].label);
+
+  // Layer checkboxes
+  for (const [group, items] of d3.group(LAYERS, d => d.group)) {
+    const fs = form.append('fieldset');
+    fs.append('legend').text(group);
+    const label = fs.selectAll('label').data(items).join('label').attr('class', 'check');
+    label.append('input').attr('type', 'checkbox').attr('name', 'layer')
+      .attr('value', d => d.id).property('checked', d => state.layers[d.id]);
+    label.append('span').text(d => d.label);
+  }
+
+  // Sun & seasons: date and time sliders drive the day/night layer
+  const fs = form.append('fieldset').attr('class', 'sun');
+  fs.append('legend').text('Sun & seasons');
+  fs.append('output').attr('id', 'sun-readout');
+  const slider = (id, text, min, max, step, key) => {
+    const row = fs.append('label').attr('class', 'slider');
+    row.append('span').text(text);
+    row.append('input').attr('type', 'range').attr('id', id)
+      .attr('min', min).attr('max', max).attr('step', step)
+      .on('input', function () { state.sun[key] = +this.value; showSun(); });
+  };
+  slider('sun-day', 'Date', 1, 365, 1, 'day');
+  slider('sun-hour', 'Time (UTC)', 0, 23.75, 0.25, 'hour');
+  const chips = fs.append('div').attr('class', 'chips');
+  chips.append('button').attr('type', 'button').text('Now').on('click', () => { setSunNow(); showSun(); });
+  chips.selectAll(null).data(SUN.jumps).join('button').attr('type', 'button').text(d => d.label)
+    .on('click', (event, d) => { state.sun.day = d.day; showSun(); });
+  chips.append('button').attr('type', 'button').attr('id', 'sun-play').text('▶ Play year').on('click', togglePlay);
+
+  form.append('button').attr('type', 'button').attr('class', 'wide').text('Reset view').on('click', resetView);
+
+  form.on('submit', event => event.preventDefault());
+  form.on('change', event => {
+    const el = event.target;
+    if (el.name === 'layer') {
+      state.layers[el.value] = el.checked;
+      if (el.value === 'daynight' && !el.checked && playTimer) togglePlay();
+      applyVisibility();
+    } else if (el.name === 'projection') {
+      state.projection = el.value;
+      layout();
+    }
+  });
+}
+
+/** Legend swatches: a short line sample or a filled box. */
+function lineSwatch({ color, width = 2, dash, cap, marker }) {
+  return `<svg width="34" height="12" aria-hidden="true"><line x1="2" y1="6" x2="${marker ? 25 : 32}" y2="6" stroke="${color}" stroke-width="${width}"${dash ? ` stroke-dasharray="${dash}"` : ''}${cap ? ` stroke-linecap="${cap}"` : ''}${marker ? ` marker-end="url(#${marker})"` : ''}/></svg>`;
+}
+function fillSwatch({ color, opacity, dash }) {
+  return `<svg width="34" height="12" aria-hidden="true"><rect x="1" y="1" width="32" height="10" rx="2" fill="${color}" fill-opacity="${opacity}" stroke="${color}" stroke-opacity=".7"${dash ? ` stroke-dasharray="${dash}"` : ''}/></svg>`;
+}
+
+/**
+ * Legend rows are buttons. Each row names the `layer` it belongs to and the `tag` of the
+ * features it stands for; `about` is an optional summary card for rows with many features.
+ */
+const legendRows = [];
+function buildLegend() {
+  const specialRows = group => SPECIAL_LINES.filter(d => d.group === group)
+    .map(d => ({ swatch: lineSwatch(d), label: `${d.name} (${d.short})`, layer: 'special', tag: `special:${d.name}` }));
+  const groups = [
+    { title: 'Major Reference Lines', rows: specialRows('major') },
+    { title: 'Special Latitude Circles', rows: specialRows('circle') },
+    { title: 'Graticule (15°)', rows: [{
+        swatch: lineSwatch({ color: GRATICULE.color, width: 1 }), label: 'Parallels (latitude) and meridians (longitude)',
+        layer: 'graticule', tag: 'graticule',
+        about: { name: 'Graticule', cls: 'Graticule: Latitude / Longitude', coordLabel: 'Spacing', coord: `Every ${GRATICULE_STEP}° of latitude and longitude`,
+          color: GRATICULE.color, desc: `${GRATICULE.parallel} ${GRATICULE.meridian}` } }] },
+    { title: 'Date Line', rows: specialRows('dateline') },
+    { title: 'Climate Zones', rows: CLIMATE_ZONES.map(z => ({
+        swatch: fillSwatch({ color: z.color, opacity: z.opacity + 0.25 }), label: `${z.name} (${z.range[0]}°–${z.range[1]}°)`,
+        layer: 'climate', tag: `climate:${z.name}` })) },
+    { title: 'Other Info Layers', rows: [
+        ...Object.entries(PRESSURE_STYLE).map(([k, s]) => ({
+          swatch: fillSwatch({ color: s.color, opacity: 0.2, dash: '4 3' }), label: s.label, layer: 'pressure', tag: `pressure:${k}` })),
+        { swatch: lineSwatch({ color: WIND_STYLE.color, width: 1.6, marker: 'arrow-wind' }), label: 'Prevailing wind direction', layer: 'winds', tag: 'wind' },
+        ...Object.entries(CURRENT_STYLE).map(([k, s]) => ({
+          swatch: lineSwatch({ color: s.color, marker: `arrow-${k}` }), label: s.label, layer: 'currents', tag: `current:${k}` })),
+        { swatch: fillSwatch({ color: TIME_ZONE_STYLE.color, opacity: 0.15 }), label: 'Time zone (15° band, UTC offset)',
+          layer: 'timezones', tag: 'timezone',
+          about: { name: 'Time zones', cls: 'Time Zone', coordLabel: 'Layout', coord: '24 zones, each 15° of longitude', color: TIME_ZONE_STYLE.color,
+            desc: 'Earth turns 360° in 24 hours — 15° every hour — so the world is divided into 24 nominal time zones, each one hour apart and counted from UTC at the Prime Meridian. Hover a band on the map for its offset and example cities.' } },
+        ...Object.entries(BOUNDARY_TYPES).map(([k, t]) => ({
+          swatch: lineSwatch({ color: t.color, width: 1.8, dash: t.dash }), label: t.label, layer: 'plates', tag: `plate:${k}` })),
+        { swatch: fillSwatch({ color: SUN.nightColor, opacity: 0.55 }), label: 'Night side of Earth (day & night)', layer: 'daynight', tag: 'sun' }
+      ] }
+  ];
+  legendEl.innerHTML = '<p class="legend-hint">Hover a row to spotlight it on the map. Click it to switch its layer on and read about it.</p>' +
+    groups.map(g => `<h3>${escapeHtml(g.title)}</h3><ul>${g.rows.map(r => {
+      const i = legendRows.push(r) - 1;
+      return `<li><button type="button" class="row" data-i="${i}">${r.swatch}<span>${escapeHtml(r.label)}</span></button></li>`;
+    }).join('')}</ul>`).join('');
+
+  const rowOf = event => { const b = event.target.closest('button[data-i]'); return b ? legendRows[+b.dataset.i] : null; };
+  legendEl.addEventListener('pointerover', e => { const row = rowOf(e); spotlight(row ? row.tag : null); });
+  legendEl.addEventListener('pointerleave', () => spotlight(null));
+  legendEl.addEventListener('focusin', e => { const row = rowOf(e); spotlight(row ? row.tag : null); });
+  legendEl.addEventListener('focusout', () => spotlight(null));
+  legendEl.addEventListener('click', e => {
+    const row = rowOf(e);
+    if (!row) return;
+    setLayer(row.layer, true);
+    spotlight(row.tag);
+    const infos = row.about ? [row.about] : allInfos.filter(info => info.tag === row.tag);
+    pinned = null;
+    showDetails(infos, `Legend — ${escapeHtml(row.label)}`);
+    draw();
+  });
+}
+
+/** Dim everything except the features with the given tag (null clears the spotlight). */
+function spotlight(tag) {
+  svg.classed('spotlight', !!tag);
+  gMap.selectAll('.feat, .arrow').classed('lit', d => !!tag && (d.tag || (d.info && d.info.tag)) === tag);
+}
+
+/* ======================================================================
+   10. START
+   ====================================================================== */
+
+setSunNow();
+buildControls();
+buildLegend();
+buildGraticule();
+buildSpecialLines();
+buildClimateZones();
+buildPressureBelts();
+buildWinds();
+buildCurrents();
+buildTimeZones();
+buildPlates();
+buildSun();
+detailsEl.innerHTML = DETAILS_HINT;
+
+layout();
+applyVisibility();
+loadCountries();
+
+// Responsive: refit whenever the map container changes width.
+let resizeFrame = 0;
+new ResizeObserver(() => {
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(() => {
+    if (Math.max(320, Math.floor(mapEl.clientWidth)) !== width) layout();
+  });
+}).observe(mapEl);
+
+})();
+</script>
+</body>
+</html>
