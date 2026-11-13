@@ -1,19 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DEFAULT_LAYERS, DEFAULT_PROJECTION, INFO_LAYER_IDS, LAYERS, PROJECTIONS, SUN } from '@/data';
+import { DEFAULT_LAYERS, DEFAULT_PROJECTION, INFO_LAYER_IDS, LAYERS, PROJECTIONS, STREET_MAP, SUN } from '@/data';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { clamp, sunNow } from '@/lib/geo';
+import { loaded, nearestCity, type City } from '@/lib/geodata';
+import { geoDistance } from 'd3-geo';
+import { fmtLonLat } from '@/lib/geo';
 import type { LegendRow } from '@/lib/legend';
 import type {
-  Details, FeatureInfo, LayerId, LayerState, LonLat, ProjectionId, QuickView, SunState
+  Details, FeatureInfo, LayerId, LayerState, LonLat, Measurement, ProjectionId, QuickView, SunState
 } from '@/lib/types';
 import { ControlPanel } from './ControlPanel';
 import { DetailsPanel } from './DetailsPanel';
 import { Disclosure } from './Disclosure';
 import { FeatureSearch } from './FeatureSearch';
+import { FlightRouteDialog, type RouteEnd } from './FlightRouteDialog';
 import { HelpDialog } from './HelpDialog';
 import { Legend } from './Legend';
+import { StreetMapDialog, type StreetMapTarget } from './StreetMapDialog';
 import { ThemeToggle } from './ThemeToggle';
 import { WorldMap, type WorldMapHandle } from './WorldMap';
 import { CloseIcon, HelpIcon, SlidersIcon } from './icons';
@@ -87,6 +92,11 @@ export function MapExplorer() {
   const [playing, setPlaying] = useState(false);
   const [details, setDetails] = useState<Details | null>(null);
   const [searchIndex, setSearchIndex] = useState<FeatureInfo[]>([]);
+  const [country, setCountry] = useState<string | null>(null);              // country being explored
+  const [measuring, setMeasuring] = useState(false);                        // distance tool on/off
+  const [measurement, setMeasurement] = useState<Measurement | null>(null);
+  const [streetMap, setStreetMap] = useState<StreetMapTarget | null>(null); // street-map dialog
+  const [routeRequest, setRouteRequest] = useState<{ from?: RouteEnd; to?: RouteEnd; id: number } | null>(null);
   const mapRef = useRef<WorldMapHandle>(null);
 
   /* ---------- Panel, help and toast state ---------- */
@@ -205,9 +215,67 @@ export function MapExplorer() {
     setLayers({ ...DEFAULT_LAYERS, ...(reduceMotion ? { spin: false } : {}) });
     setSun(sunNow());
     setPlaying(false);
+    setCountry(null);
+    setMeasuring(false);
+    mapRef.current?.focusCountry(null);
+    mapRef.current?.setMeasure(false);
     mapRef.current?.spotlight(null);
     notify('Controls are back to their defaults.');
   }, [notify]);
+
+  /* ---------- Country view, distance tool, street map ---------- */
+  // "Explore": highlight the country, show all its cities and the plates, and list them in Details.
+  const handleExploreCountry = useCallback((name: string) => {
+    setCountry(name);
+    setLayers(l => ({ ...l, cities: true, plates: true, spin: false }));
+    mapRef.current?.focusCountry(name);
+    document.getElementById('details-title')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, []);
+
+  const handleLeaveCountry = useCallback(() => {
+    setCountry(null);
+    mapRef.current?.focusCountry(null);
+  }, []);
+
+  // A city row: go there and describe the place.
+  const handlePickCity = useCallback((city: City) => {
+    mapRef.current?.inspectPoint(city.lonlat, city.name);
+  }, []);
+
+  const toggleMeasure = useCallback(() => {
+    setMeasuring(on => {
+      mapRef.current?.setMeasure(!on);
+      return !on;
+    });
+  }, []);
+  const stopMeasure = useCallback(() => {
+    setMeasuring(false);
+    mapRef.current?.setMeasure(false);
+  }, []);
+  const clearMeasure = useCallback(() => mapRef.current?.setMeasure(true), []);
+
+  // Escape leaves the distance tool.
+  useEffect(() => {
+    if (!measuring) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') stopMeasure(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [measuring, stopMeasure]);
+
+  // Flight-route explainer: from the toolbar (last or default route) or for the two measured points.
+  const openFlightRoutes = useCallback(() => setRouteRequest({ id: Date.now() }), []);
+  const explainRoute = useCallback((a: LonLat, b: LonLat) => {
+    // Name each end after a city within 80 km, otherwise by its coordinates.
+    const name = (p: LonLat) => {
+      const city = loaded.cities ? nearestCity(loaded.cities.cities, p) : null;
+      return city && geoDistance(city.lonlat, p) * 6371 < 80 ? city.name : fmtLonLat(p);
+    };
+    setRouteRequest({ from: { point: a, label: name(a) }, to: { point: b, label: name(b) }, id: Date.now() });
+  }, []);
+
+  const openStreetMap = useCallback((point: LonLat, label: string, zoom: number = STREET_MAP.placeZoom) => {
+    setStreetMap({ point, label, zoom });
+  }, []);
 
   /* ---------- Selections ---------- */
   const handleSelect = useCallback((infos: FeatureInfo[], heading: string, point: LonLat | null) => {
@@ -222,16 +290,25 @@ export function MapExplorer() {
   const handleLegend = useCallback((row: LegendRow) => {
     setLayers(l => (l[row.layer] ? l : { ...l, [row.layer]: true }));
     mapRef.current?.spotlight({ tag: row.tag });
-    const infos = row.about ? [row.about] : mapRef.current?.infosByTag(row.tag) ?? [];
-    setDetails({ infos, heading: `Legend — ${row.label}` });
+    // Rows that stand for many features (e.g. dozens of plate boundaries) show the first dozen.
+    const all = row.about ? [row.about] : mapRef.current?.infosByTag(row.tag) ?? [];
+    const infos = all.slice(0, 12);
+    setDetails({ infos, heading: `Legend — ${row.label}${all.length > infos.length ? ` (${infos.length} of ${all.length})` : ''}` });
   }, []);
 
   // Search result: switch its layer on, stop the spin, turn the globe to it and pin its card.
   const handlePick = useCallback((info: FeatureInfo) => {
     setLayers(l => ({ ...l, ...(info.layer ? { [info.layer]: true } : {}), spin: false }));
-    mapRef.current?.focusFeature(info);
-    setDetails({ infos: [info], heading: 'Search result' });
-  }, []);
+    if (info.country) {
+      handleExploreCountry(info.country);
+      setDetails({ infos: [info], heading: 'Search result' });
+    } else if (info.point) {
+      mapRef.current?.inspectPoint(info.point, info.name);
+    } else {
+      mapRef.current?.focusFeature(info);
+      setDetails({ infos: [info], heading: 'Search result' });
+    }
+  }, [handleExploreCountry]);
 
   const clearDetails = useCallback(() => {
     setDetails(null);
@@ -379,16 +456,26 @@ export function MapExplorer() {
             ref={mapRef} projection={projection} layers={layers} sun={sun}
             onSelect={handleSelect} onIndex={setSearchIndex}
             onLocate={handleLocate} onShare={handleShare}
+            measuring={measuring} onToggleMeasure={toggleMeasure} onMeasure={setMeasurement}
+            onFlightRoutes={openFlightRoutes}
           />
-          <DetailsPanel details={details} sun={sun} onClear={clearDetails} />
+          <DetailsPanel
+            details={details} sun={sun} onClear={clearDetails}
+            country={country} onExploreCountry={handleExploreCountry} onLeaveCountry={handleLeaveCountry} onPickCity={handlePickCity}
+            measurement={measuring ? measurement : null} onClearMeasure={clearMeasure} onDoneMeasure={stopMeasure}
+            onStreetMap={openStreetMap} onExplainRoute={explainRoute}
+          />
           <p className="px-1 text-xs text-muted">
-            Reference layers are simplified for teaching: plate boundaries, ocean currents, the date line and the
-            Sun&apos;s position are approximate.
+            Reference layers are simplified for teaching: ocean currents, wind and pressure belts, the date line and the
+            Sun&apos;s position are approximate. Data: Natural Earth; PB2002 plate model (Bird 2003, prepared by Hugo Ahlenius,
+            ODC-By); earthquakes from USGS; street maps © OpenStreetMap contributors.
           </p>
         </main>
       </div>
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <StreetMapDialog target={streetMap} onClose={() => setStreetMap(null)} />
+      <FlightRouteDialog request={routeRequest} onClose={() => setRouteRequest(null)} />
 
       {/* Toast: brief feedback for actions such as "link copied" */}
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50">

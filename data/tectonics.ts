@@ -1,116 +1,110 @@
-/** Tectonic plates layer: plate names and simplified plate boundaries. */
-import type { BoundaryKind, BoundaryType, PlateBoundary, TectonicPlate } from '@/lib/types';
+/**
+ * Tectonic plates layer.
+ *
+ * Plate shapes and boundaries come from the PB2002 plate model (Bird, 2003), prepared by
+ * scripts/build-geodata.mjs into data/geo/plates.json. This file holds everything that is
+ * meant to be edited: names, descriptions, boundary styles and notes.
+ */
+import type { BoundaryKind, BoundaryType, TectonicPlate } from '@/lib/types';
 
-/** Tectonic plates: label position [lon, lat] and description. */
 export const PLATE_LABEL_COLOR = '#6b2f0f';
-export const TECTONIC_PLATES: TectonicPlate[] = [
-  { name: 'Pacific Plate', rank: 'Major plate', label: [-150, 12], region: 'Most of the Pacific Ocean floor',
-    desc: 'The largest tectonic plate and almost entirely oceanic. Subduction along its edges forms the volcanic and earthquake-prone "Ring of Fire".' },
-  { name: 'North American Plate', rank: 'Major plate', label: [-100, 47], region: 'North America, Greenland, western North Atlantic, north-east Siberia',
-    desc: 'Carries North America, Greenland and the western half of the North Atlantic. Its eastern edge is the Mid-Atlantic Ridge; its western edge includes the San Andreas Fault.' },
-  { name: 'Eurasian Plate', rank: 'Major plate', label: [78, 54], region: 'Europe and most of Asia',
-    desc: 'Carries most of Europe and Asia. It collides with the African, Arabian and Indian plates along the Alpine–Himalayan mountain belt.' },
-  { name: 'African Plate', rank: 'Major plate', label: [20, 6], region: 'Africa and surrounding ocean floor',
-    desc: 'Carries Africa and the surrounding sea floor. It is slowly splitting along the East African Rift into Nubian and Somali parts.' },
-  { name: 'Indo-Australian Plate', rank: 'Major plate', label: [104, -27], region: 'India, Australia and much of the Indian Ocean',
-    desc: 'Carries India, Australia and much of the Indian Ocean; often treated as separate Indian and Australian plates. Its northward push built the Himalaya.' },
-  { name: 'Antarctic Plate', rank: 'Major plate', label: [45, -74], region: 'Antarctica and the Southern Ocean',
-    desc: 'Carries Antarctica and the surrounding Southern Ocean floor. It is almost completely ringed by spreading ridges.' },
-  { name: 'South American Plate', rank: 'Major plate', label: [-54, -14], region: 'South America and the western South Atlantic',
-    desc: 'Carries South America and the western South Atlantic. The Nazca Plate dives beneath its western edge, raising the Andes.' },
-  { name: 'Nazca Plate', rank: 'Minor plate', label: [-93, -19], region: 'South-east Pacific, off South America',
-    desc: 'Oceanic plate that is subducting beneath South America along the Peru–Chile Trench.' },
-  { name: 'Arabian Plate', rank: 'Minor plate', label: [47, 23], region: 'Arabian Peninsula',
-    desc: 'Pulling away from Africa along the Red Sea and pushing into Eurasia, raising the Zagros Mountains.' },
-  { name: 'Cocos Plate', rank: 'Minor plate', label: [-97, 8.5], region: 'Eastern Pacific, off Central America',
-    desc: 'Small oceanic plate subducting beneath Central America, feeding its chain of volcanoes.' },
-  { name: 'Caribbean Plate', rank: 'Minor plate', label: [-74, 15], region: 'Caribbean Sea and Central America',
-    desc: 'Small plate between North and South America, bounded by the Lesser Antilles volcanic arc in the east.' },
-  { name: 'Philippine Sea Plate', rank: 'Minor plate', label: [133, 17], region: 'Western Pacific, east of the Philippines',
-    desc: 'Oceanic plate wedged between the Pacific and Eurasian plates and bordered by deep trenches on both sides.' }
-];
 
-/** Plate-boundary types, used for colour, legend and tooltip text. */
-export const BOUNDARY_TYPES: Record<BoundaryKind, BoundaryType> = {
-  divergent:  { label: 'Plate boundary — divergent',  color: '#c2185b', dash: null,
-    desc: 'Divergent boundary: the plates move apart and new crust forms along a spreading ridge or rift valley.' },
-  convergent: { label: 'Plate boundary — convergent', color: '#7f1d1d', dash: null,
-    desc: 'Convergent boundary: the plates collide; one is forced beneath the other or mountains are pushed up, with deep trenches, volcanoes and strong earthquakes.' },
-  transform:  { label: 'Plate boundary — transform',  color: '#4d7c0f', dash: null,
-    desc: 'Transform boundary: the plates slide past each other along faults, causing frequent earthquakes.' },
-  diffuse:    { label: 'Plate boundary — diffuse',    color: '#6b7280', dash: '4 3',
-    desc: 'Diffuse boundary: a broad or poorly defined zone of deformation rather than a single sharp line.' }
+/**
+ * Named plates, keyed by PB2002 code. Plates not listed here (about 40 small microplates)
+ * are still drawn and hoverable, as "<name> Plate · microplate".
+ * PB2002 splits the classic Indo-Australian Plate into the Indian and Australian plates,
+ * and Africa into the Nubian (AF) and Somali (SO) plates.
+ */
+export const TECTONIC_PLATES: Record<string, TectonicPlate> = {
+  PA: { name: 'Pacific Plate', rank: 'Major plate', label: [-150, 12], region: 'Most of the Pacific Ocean floor',
+    desc: 'The largest tectonic plate and almost entirely oceanic. Subduction along its edges forms the volcanic and earthquake-prone "Ring of Fire".' },
+  NA: { name: 'North American Plate', rank: 'Major plate', label: [-100, 47], region: 'North America, Greenland, western North Atlantic, north-east Siberia',
+    desc: 'Carries North America, Greenland and the western half of the North Atlantic. Its eastern edge is the Mid-Atlantic Ridge; its western edge includes the San Andreas Fault.' },
+  EU: { name: 'Eurasian Plate', rank: 'Major plate', label: [60, 55], region: 'Europe and most of Asia',
+    desc: 'Carries most of Europe and Asia. It collides with the African, Arabian and Indian plates along the Alpine–Himalayan mountain belt.' },
+  AF: { name: 'African (Nubian) Plate', rank: 'Major plate', label: [15, 5], region: 'Most of Africa and surrounding ocean floor',
+    desc: 'Carries most of Africa and the surrounding sea floor. It is slowly splitting from the Somali Plate along the East African Rift.' },
+  SO: { name: 'Somali Plate', rank: 'Minor plate', label: [45, -8], region: 'Eastern Africa and the western Indian Ocean',
+    desc: 'The eastern part of Africa, pulling away from the rest of the continent along the East African Rift.' },
+  IN: { name: 'Indian Plate', rank: 'Major plate', label: [78, 10], region: 'India and the central Indian Ocean',
+    desc: 'Carries the Indian subcontinent. Its northward push into Asia built the Himalaya. Together with the Australian Plate it is traditionally called the Indo-Australian Plate.' },
+  AU: { name: 'Australian Plate', rank: 'Major plate', label: [130, -25], region: 'Australia, New Guinea and surrounding ocean',
+    desc: 'Carries Australia and much of the eastern Indian Ocean. Together with the Indian Plate it is traditionally called the Indo-Australian Plate.' },
+  AN: { name: 'Antarctic Plate', rank: 'Major plate', label: [45, -74], region: 'Antarctica and the Southern Ocean',
+    desc: 'Carries Antarctica and the surrounding Southern Ocean floor. It is almost completely ringed by spreading ridges.' },
+  SA: { name: 'South American Plate', rank: 'Major plate', label: [-50, -14], region: 'South America and the western South Atlantic',
+    desc: 'Carries South America and the western South Atlantic. The Nazca Plate dives beneath its western edge, raising the Andes.' },
+  NZ: { name: 'Nazca Plate', rank: 'Minor plate', label: [-93, -19], region: 'South-east Pacific, off South America',
+    desc: 'Oceanic plate that is subducting beneath South America along the Peru–Chile Trench.' },
+  AR: { name: 'Arabian Plate', rank: 'Minor plate', label: [47, 23], region: 'Arabian Peninsula',
+    desc: 'Pulling away from Africa along the Red Sea and pushing into Eurasia, raising the Zagros Mountains.' },
+  CO: { name: 'Cocos Plate', rank: 'Minor plate', label: [-97, 8.5], region: 'Eastern Pacific, off Central America',
+    desc: 'Small oceanic plate subducting beneath Central America, feeding its chain of volcanoes.' },
+  CA: { name: 'Caribbean Plate', rank: 'Minor plate', label: [-74, 15], region: 'Caribbean Sea and Central America',
+    desc: 'Small plate between North and South America, bounded by the Lesser Antilles volcanic arc in the east.' },
+  PS: { name: 'Philippine Sea Plate', rank: 'Minor plate', label: [133, 17], region: 'Western Pacific, east of the Philippines',
+    desc: 'Oceanic plate wedged between the Pacific and Eurasian plates and bordered by deep trenches on both sides.' },
+  SU: { name: 'Sunda Plate', rank: 'Minor plate', region: 'South-east Asia: Indochina, Malaysia, Sumatra, Java, Borneo',
+    desc: 'Often treated as part of the Eurasian Plate. The Indian and Australian plates subduct beneath its southern edge along the Sunda (Java) Trench.' },
+  YA: { name: 'Yangtze Plate', rank: 'Minor plate', region: 'Southern China',
+    desc: 'Small block of southern China that moves slightly differently from the rest of Eurasia.' },
+  AM: { name: 'Amur Plate', rank: 'Minor plate', region: 'North-east China, Korea, south-west Japan',
+    desc: 'Small plate in north-east Asia, often treated as part of the Eurasian Plate.' },
+  OK: { name: 'Okhotsk Plate', rank: 'Minor plate', region: 'Kamchatka, Sea of Okhotsk, northern Japan',
+    desc: 'Small plate often treated as part of the North American Plate. The Pacific Plate subducts beneath it along the Kuril–Japan Trench.' },
+  JF: { name: 'Juan de Fuca Plate', rank: 'Minor plate', region: 'Off the coast of Oregon and Washington',
+    desc: 'Small oceanic plate sinking beneath North America along the Cascadia subduction zone.' },
+  SC: { name: 'Scotia Plate', rank: 'Minor plate', region: 'Between South America and Antarctica',
+    desc: 'Small plate whose edges form the Scotia Arc between Tierra del Fuego and the Antarctic Peninsula.' },
+  AT: { name: 'Anatolian Plate', rank: 'Minor plate', region: 'Turkey',
+    desc: 'Squeezed westward between the Arabian and Eurasian plates along the North Anatolian Fault.' }
 };
 
-/** Simplified plate boundaries as [lon, lat] polylines. `note` is optional extra text. */
-export const PLATE_BOUNDARIES: PlateBoundary[] = [
-  { name: 'Mid-Atlantic Ridge (north)', type: 'divergent', plates: 'North American – Eurasian',
-    note: 'It rises above sea level in Iceland.',
-    points: [[-5, 83], [5, 79], [7, 74], [-8, 71], [-17, 66.5], [-22, 64], [-30, 59], [-35, 53], [-30, 48], [-28, 43], [-29, 39]] },
-  { name: 'Gakkel Ridge & Chersky zone', type: 'diffuse', plates: 'North American – Eurasian',
-    note: 'A slow Arctic spreading ridge that passes into a broad boundary zone across north-east Siberia to Japan.',
-    points: [[-5, 83], [15, 85], [40, 86.5], [65, 86.5], [90, 85], [110, 81], [125, 78], [130, 72], [140, 66], [145, 60], [143, 52], [141, 45], [139.5, 39], [139, 35]] },
-  { name: 'Mid-Atlantic Ridge (central)', type: 'divergent', plates: 'North American – African',
-    points: [[-29, 39], [-37, 34], [-44, 27], [-46, 20], [-45, 15]] },
-  { name: 'Mid-Atlantic Ridge (south)', type: 'divergent', plates: 'South American – African',
-    note: 'South America and Africa have been separating here for about 130 million years.',
-    points: [[-45, 15], [-42, 11], [-33, 5], [-25, 1], [-15, -2], [-12, -8], [-14, -18], [-13, -28], [-15, -38], [-10, -47], [-1, -55]] },
-  { name: 'North American – South American boundary', type: 'diffuse', plates: 'North American – South American',
-    points: [[-45, 15], [-52, 15], [-58.5, 14.5]] },
-  { name: 'Azores–Gibraltar & Mediterranean belt', type: 'convergent', plates: 'African – Eurasian',
-    note: 'Responsible for the Alps, the Atlas Mountains and the volcanoes and earthquakes of the Mediterranean.',
-    points: [[-29, 39], [-20, 37], [-10, 36], [-5, 36], [5, 37], [12, 37.5], [16, 38], [20, 36], [24, 34.5], [28, 35], [32, 35], [36, 36.5]] },
-  { name: 'Zagros–Makran collision zone', type: 'convergent', plates: 'Arabian – Eurasian',
-    points: [[36, 36.5], [41, 38], [45, 37], [48, 33], [52, 28.5], [57, 26.5], [62, 25], [66, 25]] },
-  { name: 'Himalayan Front', type: 'convergent', plates: 'Indo-Australian (Indian) – Eurasian',
-    note: 'A continental collision that raised the Himalaya and the Tibetan Plateau.',
-    points: [[66, 25], [67, 30], [71, 34.5], [74, 35.5], [78, 32], [81, 30], [85, 28], [89, 27.5], [93, 28], [96.5, 28.5]] },
-  { name: 'Sunda (Java) Trench', type: 'convergent', plates: 'Indo-Australian – Eurasian',
-    note: 'Source of the 2004 Indian Ocean earthquake and tsunami.',
-    points: [[96.5, 28.5], [95, 25], [93.5, 21], [93, 17], [92, 12], [93, 8], [95, 4], [97, 0], [100, -4], [104, -8], [110, -10.5], [117, -11.5], [122, -11], [127, -9], [131, -7.5], [134, -5], [138, -2.5]] },
-  { name: 'New Guinea–Solomon–Vanuatu trenches', type: 'convergent', plates: 'Indo-Australian – Pacific',
-    points: [[138, -2.5], [143, -3], [148, -5.5], [152, -7], [155, -8], [160, -11], [165, -12], [167, -16], [169, -21], [172, -23], [176, -18], [-179, -15], [-173, -15]] },
-  { name: 'Tonga–Kermadec Trench & Alpine Fault', type: 'convergent', plates: 'Pacific – Indo-Australian',
-    note: 'The Tonga Trench is the second-deepest on Earth; the boundary crosses New Zealand as the Alpine Fault.',
-    points: [[-173, -15], [-172.5, -20], [-175.5, -28], [-178, -34], [179, -38], [177.5, -40.5], [173, -42.5], [169, -44.5], [166, -46.5], [164, -50], [160, -56], [161, -61.5]] },
-  { name: 'Aleutian Trench', type: 'convergent', plates: 'Pacific – North American',
-    points: [[-144, 59.5], [-150, 57.5], [-158, 54], [-167, 52], [-177, 50.5], [176, 50.5], [168, 53], [164, 55.5]] },
-  { name: 'Kuril–Japan–Mariana trenches', type: 'convergent', plates: 'Pacific – North American / Philippine Sea',
-    note: 'Includes the Mariana Trench, the deepest point in the oceans at about 10,900 m.',
-    points: [[164, 55.5], [160, 50.5], [155, 46.5], [149, 42.5], [145, 40], [143.5, 36], [142.5, 33], [143, 28], [144, 23], [147.5, 18], [147, 13], [143, 11], [139, 9], [135, 7], [133, 4], [134, 0], [138, -2.5]] },
-  { name: 'Nankai–Ryukyu–Philippine trenches', type: 'convergent', plates: 'Philippine Sea – Eurasian',
-    points: [[139, 35], [137, 33], [133, 31], [130, 28], [127, 25], [123.5, 23], [122, 22], [122.5, 19], [123.5, 16], [125.5, 13], [127, 8], [128, 3], [131, 1], [134, 0]] },
-  { name: 'Queen Charlotte, Cascadia & San Andreas', type: 'transform', plates: 'Pacific – North American',
-    note: 'Mostly transform faults, including California\'s San Andreas Fault; the Cascadia section is a subduction zone.',
-    points: [[-144, 59.5], [-138, 58.5], [-134, 54], [-130.5, 51], [-126, 48], [-125.5, 44], [-125, 40.3], [-123.5, 38.5], [-121, 36], [-118, 34.3], [-115.5, 32.5], [-113, 30], [-110, 26], [-108.5, 23], [-109, 20]] },
-  { name: 'Middle America Trench', type: 'convergent', plates: 'Cocos – North American / Caribbean',
-    points: [[-109, 20], [-106, 19], [-102, 17], [-96, 15], [-91, 13], [-87, 11], [-84, 8.5], [-82.5, 7]] },
-  { name: 'East Pacific Rise & Pacific–Antarctic Ridge', type: 'divergent', plates: 'Pacific – Cocos / Nazca / Antarctic',
-    note: 'The fastest-spreading ridge system on Earth.',
-    points: [[-109, 20], [-105, 15], [-104, 9], [-102, 2], [-103, -5], [-108, -12], [-113, -20], [-112, -28], [-111, -35], [-110, -42], [-115, -50], [-125, -55], [-140, -57], [-155, -61], [-170, -64], [178, -64.5], [168, -62.5], [161, -61.5]] },
-  { name: 'Galápagos Spreading Centre', type: 'divergent', plates: 'Cocos – Nazca',
-    points: [[-102, 2], [-95, 2.5], [-90, 1.5], [-85, 3], [-82.5, 7]] },
-  { name: 'Peru–Chile Trench', type: 'convergent', plates: 'Nazca – South American',
-    note: 'Subduction here raised the Andes and causes some of the largest earthquakes ever recorded.',
-    points: [[-82.5, 7], [-79, 5], [-80, 1], [-81.5, -3], [-80.5, -8], [-78, -13], [-74, -17.5], [-71.5, -20], [-71.5, -25], [-72.5, -30], [-73.5, -36], [-75.5, -42], [-76, -46]] },
-  { name: 'Chile Rise', type: 'divergent', plates: 'Nazca – Antarctic',
-    points: [[-111, -35], [-100, -37], [-90, -41], [-82, -44], [-76, -46]] },
-  { name: 'Scotia Arc & American–Antarctic Ridge', type: 'transform', plates: 'South American – Antarctic (Scotia)',
-    points: [[-76, -46], [-76.5, -51], [-73, -55], [-63, -55], [-50, -54], [-38, -54.5], [-28, -56], [-25, -58.5], [-27, -60.5], [-18, -60], [-8, -58], [-1, -55]] },
-  { name: 'Southwest Indian Ridge', type: 'divergent', plates: 'African – Antarctic',
-    points: [[-1, -55], [10, -53], [25, -53], [35, -45], [45, -40], [55, -34], [62, -29], [70, -25.5]] },
-  { name: 'Central Indian & Carlsberg ridges', type: 'divergent', plates: 'African – Indo-Australian',
-    points: [[70, -25.5], [68, -18], [67, -9], [68, -2], [64, 3], [60, 7], [58, 12]] },
-  { name: 'Southeast Indian Ridge', type: 'divergent', plates: 'Indo-Australian – Antarctic',
-    points: [[70, -25.5], [74, -31], [78, -38], [86, -42], [97, -47], [110, -50], [125, -50], [140, -52], [150, -58], [161, -61.5]] },
-  { name: 'Owen Fracture Zone', type: 'transform', plates: 'Arabian – Indo-Australian (Indian)',
-    points: [[58, 12], [60, 17], [63, 22], [66, 25]] },
-  { name: 'Gulf of Aden, Red Sea Rift & Dead Sea Transform', type: 'divergent', plates: 'African – Arabian',
-    note: 'Arabia is pulling away from Africa, opening the Red Sea.',
-    points: [[58, 12], [52, 14], [48, 12.5], [44, 11.8], [42, 14], [40, 17.5], [38, 21], [36, 25], [34.5, 28], [35, 30], [35.6, 33.5], [36, 36.5]] },
-  { name: 'East African Rift', type: 'divergent', plates: 'African (Nubian – Somali)',
-    note: 'A continental rift where Africa is slowly splitting apart.',
-    points: [[42, 12], [40, 9], [37.5, 5], [36, 2], [36, -2], [35, -6], [34.5, -11], [34.8, -15], [35, -19]] },
-  { name: 'Caribbean Plate margin', type: 'transform', plates: 'Caribbean – North / South American',
-    points: [[-91.5, 14.5], [-88, 16], [-83, 18], [-78, 19.5], [-72, 20], [-66, 19.7], [-61, 18], [-58.5, 14.5], [-60, 10.5], [-66, 10.5], [-72, 10.5], [-77, 8], [-79, 5]] }
-];
+/** How each kind of plate boundary is drawn and described. `classes` are PB2002 step classes. */
+export const BOUNDARY_TYPES: Record<BoundaryKind, BoundaryType> = {
+  divergent:  { label: 'Plate boundary — divergent (ridge / rift)', short: 'spreading ridge or rift', color: '#c2185b', dash: null, classes: ['OSR', 'CRB'],
+    desc: 'Divergent boundary: the plates move apart and new crust forms along a spreading ridge or rift valley.' },
+  convergent: { label: 'Plate boundary — convergent (collision)', short: 'collision zone', color: '#b45309', dash: null, classes: ['OCB', 'CCB'],
+    desc: 'Convergent boundary: the plates push into each other, folding the crust into mountain ranges, with frequent earthquakes.' },
+  subduction: { label: 'Plate boundary — subduction zone', short: 'subduction zone', color: '#7f1d1d', dash: null, classes: ['SUB'],
+    desc: 'Subduction zone: one plate dives beneath the other, forming a deep trench, a chain of volcanoes and the strongest earthquakes on Earth.' },
+  transform:  { label: 'Plate boundary — transform fault', short: 'transform fault', color: '#4d7c0f', dash: '5 3', classes: ['OTF', 'CTF'],
+    desc: 'Transform boundary: the plates slide past each other along faults, causing frequent earthquakes.' }
+};
+
+/** Names of the PB2002 step classes, shown in tooltips. */
+export const BOUNDARY_CLASS_NAMES: Record<string, string> = {
+  OSR: 'Oceanic spreading ridge', CRB: 'Continental rift', OTF: 'Oceanic transform fault',
+  CTF: 'Continental transform fault', OCB: 'Oceanic convergent boundary', CCB: 'Continental collision', SUB: 'Subduction zone'
+};
+
+/** Notes added to the boundary between two plates (key: the two codes in alphabetical order). */
+export const BOUNDARY_NOTES: Record<string, string> = {
+  'EU-IN': 'The collision of India with Asia raised the Himalaya and the Tibetan Plateau.',
+  'EU-NA': 'Includes the Mid-Atlantic Ridge, which rises above sea level in Iceland.',
+  'AF-NA': 'Part of the Mid-Atlantic Ridge.',
+  'AF-SA': 'The South Atlantic ridge: South America and Africa have been separating here for about 130 million years.',
+  'NA-PA': 'Includes the Aleutian Trench and, in California, the San Andreas Fault.',
+  'NZ-SA': 'The Peru–Chile Trench: subduction here raised the Andes and causes some of the largest earthquakes ever recorded.',
+  'AU-PA': 'Includes the Alpine Fault, which crosses New Zealand.',
+  'PA-TO': 'The Tonga Trench, the second-deepest trench on Earth.',
+  'MA-PA': 'The Mariana Trench — the deepest point in the oceans, about 10,900 m.',
+  'OK-PA': 'The Kuril–Japan Trench, source of the 2011 Tōhoku earthquake and tsunami.',
+  'BU-IN': 'The Sunda megathrust, source of the 2004 Indian Ocean earthquake and tsunami.',
+  'AU-SU': 'The Java Trench.',
+  'AF-SO': 'The East African Rift, where Africa is slowly splitting apart.',
+  'AF-AR': 'The Red Sea Rift and the Dead Sea Transform.',
+  'AR-EU': 'The Zagros–Makran zone, where Arabia pushes into Asia.',
+  'AF-EU': 'The Africa–Eurasia collision: the Alps, the Atlas Mountains and the earthquakes and volcanoes of the Mediterranean.',
+  'CO-PA': 'The East Pacific Rise, the fastest-spreading ridge system on Earth.',
+  'NZ-PA': 'The East Pacific Rise, the fastest-spreading ridge system on Earth.',
+  'AN-PA': 'The Pacific–Antarctic Ridge.',
+  'CO-NA': 'The Middle America Trench.',
+  'CA-NA': 'The Cayman Trough and the Puerto Rico Trench.',
+  'AR-SO': 'The Gulf of Aden ridge.',
+  'IN-SO': 'The Carlsberg and Central Indian ridges.',
+  'AN-AU': 'The Southeast Indian Ridge.',
+  'AN-SO': 'The Southwest Indian Ridge.',
+  'JF-NA': 'The Cascadia subduction zone.',
+  'AT-EU': 'The North Anatolian Fault.'
+};

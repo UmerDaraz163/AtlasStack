@@ -2,7 +2,6 @@
 
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import type { TooltipState } from '@/lib/types';
-import { FeatureCard } from './FeatureCard';
 import { CloseIcon } from './icons';
 
 export interface MapTooltipHandle {
@@ -62,7 +61,7 @@ export const MapTooltip = forwardRef<MapTooltipHandle, MapTooltipProps>(function
       aria-hidden={!tip}
       data-open={!!tip}
       data-sticky={!!view?.sticky}
-      className="map-tooltip fixed left-0 top-0 z-50 w-max max-w-[min(21rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-slate-900 p-3 text-[13px] leading-snug text-slate-50 shadow-pop"
+      className="map-tooltip fixed left-0 top-0 z-50 w-max max-w-[min(18rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-slate-900 p-3 text-[13px] leading-snug text-slate-50 shadow-pop"
     >
       {first && (
         <>
@@ -74,23 +73,22 @@ export const MapTooltip = forwardRef<MapTooltipHandle, MapTooltipProps>(function
               <CloseIcon width={14} height={14} />
             </button>
           )}
-          <FeatureCard info={first} tone="dark" />
-          {rest.length > 0 && (
-            <div className="mt-2 border-t border-white/15 pt-2">
-              <div className="text-[10.5px] uppercase tracking-wider text-slate-400">
-                Also at this point — {view?.sticky ? 'see Details below' : 'click for details'}
+          {/* Compact card: the full description is pinned under the map on click / tap. */}
+          <div className="flex items-center gap-2 pr-1 text-sm font-bold">
+            <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full ring-1 ring-white/40" style={{ background: first.color }} />
+            <span className="min-w-0">{first.name}</span>
+          </div>
+          <div className="mt-0.5 text-xs text-slate-300">{first.cls}{first.sub ? ` · ${first.sub}` : ''}</div>
+          {first.coord && <div className="text-xs text-slate-400">{first.coord}</div>}
+          <p className={`mt-1.5 text-[12.5px] text-slate-100 ${view?.sticky ? 'line-clamp-4' : 'line-clamp-2'}`}>{first.desc}</p>
+          <div className="mt-2 border-t border-white/15 pt-1.5 text-[11.5px] text-slate-400">
+            {rest.length > 0 && (
+              <div className="truncate">
+                Also here: {rest.slice(0, 3).map(i => i.name).join(', ')}{rest.length > 3 ? ` +${rest.length - 3}` : ''}
               </div>
-              <ul>
-                {rest.map(info => (
-                  <li key={info.key} className="flex items-baseline gap-1.5">
-                    <span aria-hidden="true" className="size-2 shrink-0 self-center rounded-full ring-1 ring-white/40" style={{ background: info.color }} />
-                    <span>{info.name}</span>
-                    <span className="text-slate-400">{info.cls}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            )}
+            <div>{view?.sticky ? 'Full details are below the map.' : 'Click for full details.'}</div>
+          </div>
         </>
       )}
     </div>

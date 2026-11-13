@@ -14,6 +14,32 @@ interface LegendProps {
 
 /** A short line sample or a filled box, drawn like the feature on the map. */
 function SwatchIcon({ swatch }: { swatch: Swatch }) {
+  if (swatch.kind === 'dot') {
+    return (
+      <svg width="34" height="12" aria-hidden="true" className="shrink-0">
+        <circle cx="17" cy="6" r={swatch.radius} fill={swatch.color} stroke="#fff" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (swatch.kind === 'rainbow') {
+    // Same colour formula as the map: hue runs through the UTC offsets.
+    const stops = [0, 0.25, 0.5, 0.75, 1].map(t => `hsl(${Math.round(t * 300)}, 68%, 56%)`);
+    const id = swatch.striped ? 'legend-civil-striped' : 'legend-civil';
+    return (
+      <svg width="34" height="12" aria-hidden="true" className="shrink-0">
+        <defs>
+          <linearGradient id={id}>{stops.map((c, i) => <stop key={c} offset={i / 4} stopColor={c} />)}</linearGradient>
+          {swatch.striped && (
+            <pattern id="legend-stripes" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="2" height="5" fill="rgba(17,24,39,0.35)" />
+            </pattern>
+          )}
+        </defs>
+        <rect x="1" y="1" width="32" height="10" rx="2" fill={`url(#${id})`} fillOpacity={0.7} />
+        {swatch.striped && <rect x="1" y="1" width="32" height="10" rx="2" fill="url(#legend-stripes)" />}
+      </svg>
+    );
+  }
   if (swatch.kind === 'fill') {
     return (
       <svg width="34" height="12" aria-hidden="true" className="shrink-0">

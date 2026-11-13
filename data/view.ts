@@ -39,8 +39,11 @@ export const LAYERS: LayerDef[] = [
   { id: 'pressure',  label: 'Pressure belts',    hint: 'Bands of high and low pressure',            group: INFO_GROUP,  on: false },
   { id: 'winds',     label: 'Prevailing winds',  hint: 'Trade winds, westerlies, easterlies',       group: INFO_GROUP,  on: false },
   { id: 'currents',  label: 'Ocean currents',    hint: 'Major warm and cold currents',              group: INFO_GROUP,  on: false },
-  { id: 'timezones', label: 'Time zones',        hint: '24 zones with their UTC offsets',           group: INFO_GROUP,  on: false },
+  { id: 'cities',    label: 'Cities',            hint: 'Capitals and major cities (more as you zoom)', group: INFO_GROUP, on: true },
+  { id: 'civiltime', label: 'Civil time zones',  hint: 'The clock time each country really uses',   group: INFO_GROUP,  on: false },
+  { id: 'timezones', label: 'Solar time zones',  hint: 'Nominal 15° bands by longitude',            group: INFO_GROUP,  on: false },
   { id: 'plates',    label: 'Tectonic plates',   hint: 'Plates and the boundaries between them',    group: INFO_GROUP,  on: false },
+  { id: 'quakes',    label: 'Recent earthquakes', hint: 'Magnitude 4.5+, past 30 days (live, USGS)', group: INFO_GROUP, on: false },
   { id: 'daynight',  label: 'Day & night (Sun)', hint: 'Night shadow and where the Sun is overhead', group: INFO_GROUP, on: false }
 ];
 
@@ -52,13 +55,13 @@ export const INFO_LAYER_IDS: LayerId[] = LAYERS.filter(l => l.group === INFO_GRO
  * (and makes sure the base map is visible). Add, remove or reorder freely.
  */
 export const QUICK_VIEWS: QuickView[] = [
-  { id: 'basics',     label: 'Basics',      layers: [] },
+  { id: 'basics',     label: 'Basics',      layers: ['cities'] },
   { id: 'climate',    label: 'Climate',     layers: ['climate'] },
   { id: 'air',        label: 'Air & winds', layers: ['pressure', 'winds'] },
   { id: 'oceans',     label: 'Oceans',      layers: ['currents'] },
-  { id: 'time',       label: 'Time',        layers: ['timezones', 'daynight'] },
+  { id: 'time',       label: 'Time',        layers: ['civiltime', 'timezones', 'daynight', 'cities'] },
   { id: 'seasons',    label: 'Seasons',     layers: ['climate', 'daynight'] },
-  { id: 'tectonics',  label: 'Tectonics',   layers: ['plates'] },
+  { id: 'tectonics',  label: 'Tectonics',   layers: ['plates', 'quakes', 'cities'] },
   { id: 'everything', label: 'Everything',  layers: INFO_LAYER_IDS }
 ];
 
@@ -67,7 +70,8 @@ export const DEFAULT_LAYERS = Object.fromEntries(LAYERS.map(l => [l.id, l.on])) 
 
 /** Drawing order of the map layers, bottom to top. */
 export const DRAW_ORDER: LayerId[] = [
-  'countries', 'climate', 'timezones', 'pressure', 'winds', 'daynight', 'graticule', 'plates', 'currents', 'special'
+  'countries', 'civiltime', 'climate', 'timezones', 'pressure', 'winds', 'daynight', 'graticule', 'plates', 'currents',
+  'special', 'quakes', 'cities'
 ];
 
 /**

@@ -44,3 +44,15 @@ export const PinIcon = (p: Props) => (
   <Icon {...p}><path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z" /><circle cx="12" cy="10.5" r="2.2" /></Icon>
 );
 export const ResetIcon = (p: Props) => <Icon {...p}><path d="M4 5v5h5" /><path d="M5.5 14.5A7 7 0 1 0 7 7.5L4 10" /></Icon>;
+export const RulerIcon = (p: Props) => (
+  <Icon {...p}><path d="M3 17L17 3l4 4L7 21z" /><path d="M7 13l2 2M10 10l2 2M13 7l2 2" /></Icon>
+);
+export const ExploreIcon = (p: Props) => (
+  <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M15.5 8.5l-2 5-5 2 2-5z" /></Icon>
+);
+export const PlaneIcon = (p: Props) => (
+  <Icon {...p}><path d="M10.5 21l1.5-1 1.5 1v-2.5l-1-1V13l7 2v-2l-7-4.5V4a1.5 1.5 0 0 0-3 0v4.5L3 13v2l7-2v4.5l-1 1z" transform="translate(0 0)" /></Icon>
+);
+export const SwapIcon = (p: Props) => <Icon {...p}><path d="M7 7h12l-3-3M17 17H5l3 3" /></Icon>;
+export const MaximizeIcon = (p: Props) => <Icon {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></Icon>;
+export const MinimizeIcon = (p: Props) => <Icon {...p}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></Icon>;

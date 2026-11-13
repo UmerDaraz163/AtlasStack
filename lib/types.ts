@@ -25,7 +25,8 @@ export interface ProjectionDef {
 export type LayerId =
   | 'countries' | 'graticule' | 'special'
   | 'labels' | 'tooltips' | 'spin' | 'bigLabels'
-  | 'climate' | 'pressure' | 'winds' | 'currents' | 'timezones' | 'plates' | 'daynight';
+  | 'climate' | 'pressure' | 'winds' | 'currents' | 'timezones' | 'civiltime' | 'plates' | 'quakes' | 'cities'
+  | 'daynight';
 
 export interface LayerDef {
   id: LayerId;
@@ -127,27 +128,25 @@ export interface OceanCurrent {
 export interface TectonicPlate {
   name: string;
   rank: 'Major plate' | 'Minor plate';
-  label: LonLat;
+  /** Label position; defaults to the centre of the plate. */
+  label?: LonLat;
   region: string;
   desc: string;
 }
 
-export type BoundaryKind = 'divergent' | 'convergent' | 'transform' | 'diffuse';
+export type BoundaryKind = 'divergent' | 'convergent' | 'subduction' | 'transform';
 
 export interface BoundaryType {
   label: string;
+  /** Short name used in sentences, e.g. "collision zone". */
+  short: string;
   color: string;
   dash: string | null;
+  /** PB2002 step classes drawn with this style. */
+  classes: string[];
   desc: string;
 }
 
-export interface PlateBoundary {
-  name: string;
-  type: BoundaryKind;
-  plates: string;
-  note?: string;
-  points: LonLat[];
-}
 
 /* ---------- Runtime records ---------- */
 
@@ -174,6 +173,10 @@ export interface FeatureInfo {
   layer?: LayerId;
   /** Where the globe turns to show the feature; null keeps the current longitude or latitude. */
   focus?: [number | null, number | null];
+  /** Set on country features: the country's name, which enables "Explore this country". */
+  country?: string;
+  /** Set on places (cities): picking it describes this exact point. */
+  point?: LonLat;
 }
 
 /** Content and position of the map tooltip. */
@@ -192,6 +195,11 @@ export interface Details {
   heading: string;
   /** The picked location, when the selection came from a point on the map. */
   point?: LonLat | null;
+}
+
+/** Result of the distance tool: one or two picked points. */
+export interface Measurement {
+  points: LonLat[];
 }
 
 /** Which features the legend / search spotlight keeps bright. */

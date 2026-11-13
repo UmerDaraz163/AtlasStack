@@ -6,3 +6,4 @@ export * from './ocean-currents';
 export * from './time-zones';
 export * from './tectonics';
 export * from './sun';
+export * from './places';

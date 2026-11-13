@@ -27,7 +27,15 @@ const TOPICS: { title: string; items: ReactNode[] }[] = [
   { title: 'Find things', items: [
     'Type in the search box to jump to a line, zone, current, plate, time zone or country.',
     '“My location” shows which zones you are in. Your position is used only in this browser.',
+    'Select a country and choose “Explore” to list its cities with their clock time, tectonic plate and distance to the nearest plate boundary.',
+    '“Street map” opens any picked place on OpenStreetMap, with links to OpenStreetMap.org and Google Maps.',
     'Quick views switch on ready-made layer sets such as Climate, Oceans or Seasons; “Reset controls” puts everything back.'
+  ] },
+  { title: 'Measure & compare', items: [
+    '“Measure” under the map: click two places for the distance, direction, flight time and the difference in clock time.',
+    '“Flight routes” shows why planes fly curved routes: watch a flat map wrap into a globe and race the shortest route against the line that looks straight.',
+    'Civil time zones colour each country by the clock time it really uses (India UTC+5:30, Nepal UTC+5:45 …).',
+    'Recent earthquakes (live from USGS) line up along the plate boundaries — deep ones only where a plate is sinking.'
   ] },
   { title: 'Sun & seasons', items: [
     'Move the date and time sliders to see the night shadow and where the Sun is overhead.',

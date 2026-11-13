@@ -4,10 +4,10 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } fr
 import { ZOOM } from '@/data';
 import { createMapEngine, type MapEngine } from '@/lib/map-engine';
 import type {
-  FeatureInfo, LayerState, LonLat, ProjectionId, SpotlightTarget, SunState, TooltipState
+  FeatureInfo, LayerState, LonLat, Measurement, ProjectionId, SpotlightTarget, SunState, TooltipState
 } from '@/lib/types';
 import { MapTooltip, type MapTooltipHandle } from './MapTooltip';
-import { FitIcon, LocateIcon, MinusIcon, PlusIcon, ShareIcon } from './icons';
+import { FitIcon, LocateIcon, MinusIcon, PlaneIcon, PlusIcon, RulerIcon, ShareIcon } from './icons';
 
 /** What the rest of the app can ask the map to do. */
 export interface WorldMapHandle {
@@ -19,6 +19,10 @@ export interface WorldMapHandle {
   /** Centre of the globe view (null on a flat map). */
   getCenter: () => LonLat | null;
   setCenter: (point: LonLat) => void;
+  /** Highlight a country, show all its cities and zoom to it (null leaves the country view). */
+  focusCountry: (name: string | null) => void;
+  /** Distance tool on/off. */
+  setMeasure: (on: boolean) => void;
 }
 
 interface WorldMapProps {
@@ -32,6 +36,12 @@ interface WorldMapProps {
   /** Toolbar buttons handled by the app shell. */
   onLocate: () => void;
   onShare: () => void;
+  /** Distance tool: whether it is on, the toolbar toggle, and the picked points. */
+  measuring: boolean;
+  onToggleMeasure: () => void;
+  onMeasure: (measurement: Measurement | null) => void;
+  /** Opens the "why are flight routes curved?" explainer. */
+  onFlightRoutes: () => void;
 }
 
 const HELP_ID = 'map-keyboard-help';
@@ -45,7 +55,7 @@ const toolButton =
  * events come back through callbacks.
  */
 export const WorldMap = memo(forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(props, ref) {
-  const { projection, layers, sun, onSelect, onIndex, onLocate, onShare } = props;
+  const { projection, layers, sun, onSelect, onIndex, onLocate, onShare, measuring, onToggleMeasure, onMeasure, onFlightRoutes } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const readoutRef = useRef<HTMLSpanElement>(null);
@@ -53,11 +63,11 @@ export const WorldMap = memo(forwardRef<WorldMapHandle, WorldMapProps>(function 
   const engineRef = useRef<MapEngine | null>(null);
 
   const [tip, setTip] = useState<TooltipState | null>(null);
-  const [status, setStatus] = useState('Simplified reference layers · Country data: Natural Earth');
+  const [status, setStatus] = useState('Data: Natural Earth (countries, cities) · PB2002 plate model (Bird 2003)');
 
   // The engine is created once; keep the latest props where its callbacks can reach them.
-  const latest = useRef({ projection, layers, sun, onSelect, onIndex });
-  useEffect(() => { latest.current = { projection, layers, sun, onSelect, onIndex }; });
+  const latest = useRef({ projection, layers, sun, onSelect, onIndex, onMeasure });
+  useEffect(() => { latest.current = { projection, layers, sun, onSelect, onIndex, onMeasure }; });
 
   // Create the engine on mount, tear it down on unmount.
   useEffect(() => {
@@ -71,7 +81,8 @@ export const WorldMap = memo(forwardRef<WorldMapHandle, WorldMapProps>(function 
       // The coordinate readout changes on every pointer move, so it is written straight to the DOM.
       onCursor: text => { if (readoutRef.current) readoutRef.current.textContent = text; },
       onStatus: setStatus,
-      onIndex: infos => latest.current.onIndex(infos)
+      onIndex: infos => latest.current.onIndex(infos),
+      onMeasure: measurement => latest.current.onMeasure(measurement)
     });
     engineRef.current = engine;
     return () => {
@@ -91,7 +102,9 @@ export const WorldMap = memo(forwardRef<WorldMapHandle, WorldMapProps>(function 
     infosByTag: tag => engineRef.current?.infosByTag(tag) ?? [],
     inspectPoint: (point, lead) => engineRef.current?.inspectPoint(point, lead),
     getCenter: () => engineRef.current?.getCenter() ?? null,
-    setCenter: point => engineRef.current?.setCenter(point)
+    setCenter: point => engineRef.current?.setCenter(point),
+    focusCountry: name => engineRef.current?.focusCountry(name),
+    setMeasure: on => engineRef.current?.setMeasure(on)
   }), []);
 
   // A tapped (sticky) tooltip closes on Escape or when the user taps anywhere outside the map.
@@ -130,10 +143,24 @@ export const WorldMap = memo(forwardRef<WorldMapHandle, WorldMapProps>(function 
         <div role="group" aria-label="Map actions" className="ml-auto flex items-center gap-1.5">
           <button type="button" className={`${toolButton} w-auto gap-1.5 px-2.5 text-xs font-medium`} title="Show my location on the map" onClick={onLocate}>
             <LocateIcon width={16} height={16} />
-            <span>My location</span>
+            <span className="max-sm:sr-only">My location</span>
           </button>
           <button type="button" className={toolButton} aria-label="Copy a link to this view" title="Copy a link to this view" onClick={onShare}>
             <ShareIcon width={16} height={16} />
+          </button>
+          <button
+            type="button" aria-pressed={measuring} title="Measure the distance between two places" onClick={onToggleMeasure}
+            className={`${toolButton} w-auto gap-1.5 px-2.5 text-xs font-medium ${measuring ? 'border-accent bg-accent-soft text-accent-dark' : ''}`}
+          >
+            <RulerIcon width={16} height={16} />
+            <span className="max-sm:sr-only">Measure</span>
+          </button>
+          <button
+            type="button" title="Why do planes fly curved routes? Compare a flat map and the globe" onClick={onFlightRoutes}
+            className={`${toolButton} w-auto gap-1.5 px-2.5 text-xs font-medium`}
+          >
+            <PlaneIcon width={16} height={16} />
+            <span className="max-sm:sr-only">Flight routes</span>
           </button>
           <span aria-hidden="true" className="mx-0.5 h-6 w-px bg-rule" />
           <button type="button" className={toolButton} aria-label="Zoom in" title="Zoom in" onClick={() => engineRef.current?.zoomBy(ZOOM.step)}>

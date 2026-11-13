@@ -11,27 +11,30 @@
  *   5. draw       – recomputes every path and label position (called on every zoom/rotate frame)
  *   6. interaction – zoom, drag-to-rotate, keyboard, hover / tap hit-testing
  */
-import { geoCentroid, geoCircle, geoDistance, geoPath, type GeoPath, type GeoProjection } from 'd3-geo';
+import { geoCentroid, geoCircle, geoDistance, geoInterpolate, geoPath, type GeoPath, type GeoProjection } from 'd3-geo';
 import { pointer, select, type Selection } from 'd3-selection';
 import { timer } from 'd3-timer';
 import 'd3-transition';
 import { zoom as d3Zoom, zoomIdentity, type D3ZoomEvent } from 'd3-zoom';
-import type { LineString, Polygon } from 'geojson';
-import { feature } from 'topojson-client';
-import type { GeometryCollection, Topology } from 'topojson-specification';
+import type { Feature, LineString, Point, Polygon } from 'geojson';
 import {
-  BOUNDARY_TYPES, CLIMATE_NOTE, CLIMATE_ZONES, CURRENT_STYLE, DRAW_ORDER, GLOBE, GRATICULE, GRATICULE_STEP,
-  KM_PER_DEGREE, LABEL_COLUMNS, OCEAN_CURRENTS, PLATE_BOUNDARIES, PLATE_LABEL_COLOR, PRESSURE_BELTS,
-  PRESSURE_STYLE, PROJECTIONS, SPECIAL_LINES, SUN, TECTONIC_PLATES, TIME_ZONE_EXAMPLES, TIME_ZONE_STYLE,
-  WIND_BELTS, WIND_STYLE, ZOOM
+  BOUNDARY_CLASS_NAMES, BOUNDARY_NOTES, BOUNDARY_TYPES, CITY_STYLE, CITY_ZOOM_RANKS, CIVIL_TIME, CLIMATE_NOTE,
+  CLIMATE_ZONES, CURRENT_STYLE, DRAW_ORDER, GLOBE, GRATICULE, GRATICULE_STEP, KM_PER_DEGREE, LABEL_COLUMNS,
+  OCEAN_CURRENTS, PLATE_LABEL_COLOR, PRESSURE_BELTS, PRESSURE_STYLE, PROJECTIONS, QUAKES, SPECIAL_LINES, SUN,
+  TECTONIC_PLATES, TIME_ZONE_EXAMPLES, TIME_ZONE_STYLE, WIND_BELTS, WIND_STYLE, ZOOM
 } from '@/data';
+import {
+  EARTH_RADIUS_KM, areaKm2, clockTime, describePlatePosition, fmtOffset, fmtPopulation, loadCities,
+  loadCountries as loadCountryShapes, loadPlates, loaded, plateName, standardOffsetMinutes, sunDate,
+  utcOffsetMinutes, zoneLongName, type City, type Country, type CityData, type PlateData
+} from './geodata';
 import {
   RAD, bandGeo, clamp, darker, densify, fmtDay, fmtHour, fmtLat, fmtLon, fmtLonLat, meridianGeo, mirrorBands,
   parallelGeo, plural, range, smooth, spaced, sunPosition, trimNum, wrapLon
 } from './geo';
 import { TAGS } from './legend';
 import type {
-  FeatureInfo, LayerId, LayerState, LonLat, ProjectionId, SpotlightTarget, SunState, TooltipState
+  FeatureInfo, LayerId, LayerState, LonLat, Measurement, ProjectionId, SpotlightTarget, SunState, TooltipState
 } from './types';
 
 /* ---------- Public API ---------- */
@@ -55,8 +58,10 @@ export interface EngineCallbacks {
   /** Coordinates under the pointer, already formatted ("—" when off the Earth). */
   onCursor: (text: string) => void;
   onStatus: (text: string) => void;
-  /** The list of searchable features changed (once at start, again when countries load). */
+  /** The list of searchable features changed (once at start, again as countries, cities and plates load). */
   onIndex: (infos: FeatureInfo[]) => void;
+  /** Distance tool: the picked points changed (null when the tool is switched off). */
+  onMeasure: (measurement: Measurement | null) => void;
 }
 
 export interface MapEngine {
@@ -76,6 +81,10 @@ export interface MapEngine {
   /** Centre of the globe view, or null on a flat map. */
   getCenter: () => LonLat | null;
   setCenter: (point: LonLat) => void;
+  /** Highlight a country, show all its cities and zoom to it (null leaves the country view). */
+  focusCountry: (name: string | null) => void;
+  /** Distance tool on/off: while on, clicks place the two end points. */
+  setMeasure: (on: boolean) => void;
   dismissTooltip: () => void;
   destroy: () => void;
 }
@@ -195,6 +204,11 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       .attr('refX', 7).attr('refY', 5).attr('markerWidth', 4.5).attr('markerHeight', 4.5).attr('orient', 'auto')
       .append('path').attr('d', 'M0,0.5L10,5L0,9.5z').attr('fill', color);
   }
+  // Diagonal stripes marking time zones that are not a whole number of hours (India, Nepal …).
+  defs.append('pattern').attr('id', 'wm-stripes').attr('width', 6).attr('height', 6)
+    .attr('patternUnits', 'userSpaceOnUse').attr('patternTransform', 'rotate(45)')
+    .append('rect').attr('width', 2.2).attr('height', 6).attr('fill', 'rgba(17, 24, 39, 0.28)');
+
   addMarker('wm-arrow-wind', WIND_STYLE.color);
   addMarker('wm-arrow-warm', CURRENT_STYLE.warm.color);
   addMarker('wm-arrow-cold', CURRENT_STYLE.cold.color);
@@ -208,6 +222,11 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
   const sphereOutline = gMap.append('path').attr('class', 'sphere-outline');
   const gLabels: GSel = gMap.append('g').attr('class', 'labels').attr('data-layer', 'labels');
   const pinMark = gMap.append('circle').attr('class', 'pin').attr('r', 4).style('display', 'none');
+  // Distance tool: great-circle line, its two ends and the distance label.
+  const gMeasure = gMap.append('g').attr('class', 'measure').style('display', 'none');
+  const measureLine = gMeasure.append('path').attr('class', 'measure-line');
+  const measureEnds = [gMeasure.append('circle').attr('r', 5), gMeasure.append('circle').attr('r', 5)];
+  const measureLabel = gMeasure.append('text').attr('class', 'measure-label').attr('text-anchor', 'middle').attr('dy', -8);
   // Degree ticks and UTC offsets: in the margins of the flat maps, on the surface of the globe.
   const gEdge: GSel = svg.append('g').attr('class', 'labels edge').attr('data-layer', 'labels');
   // Crosshair marking the map centre; shown while the map has keyboard focus (see globals.css).
@@ -320,6 +339,8 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       item.prio = item.prio ?? prio;
       const text = g.append('text').datum(item)
         .attr('class', `lbl ${item.cls ?? ''}${item.info ? ' hit' : ''}`)
+        .attr('text-anchor', (globeMode && item.globeAnchor) || item.anchor || 'middle')
+        .text((globeMode && item.globeText) || item.text)
         .attr('dy', item.dy ?? null)
         .attr('fill', item.fill ?? null);
       labelNodes.push({ el: text.node() as SVGTextElement, d: item });
@@ -547,10 +568,10 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
         stroke: TIME_ZONE_STYLE.color, strokeWidth: 0.6, strokeOpacity: 0.35,
         geom: bandGeom(-90, 90, lon0, lon1),
         info: makeInfo({
-          name, cls: 'Time Zone', sub: 'Nominal 15° zone', coordLabel: 'Longitude range',
+          name, cls: 'Time Zone', sub: 'Solar (nominal) 15° zone', coordLabel: 'Longitude range',
           tag: TAGS.timezone, layer: 'timezones', focus: [(lon0 + lon1) / 2, null],
           coord: `${fmtLon(lon0)} – ${fmtLon(lon1)} (central meridian ${fmtLon(center)})`, color: TIME_ZONE_STYLE.color,
-          desc: `${clock} Earth turns 15° of longitude every hour, giving 24 time zones of 15° each.${split} Real zone boundaries bend to follow national borders. Standard-time examples: ${TIME_ZONE_EXAMPLES[String(n)]}.`
+          desc: `${clock} Earth turns 15° of longitude every hour, giving 24 solar time zones of 15° each.${split} This band is the nominal zone; the clock time a country actually uses can differ — India, for example, uses UTC+5:30 although it lies across the UTC+5 and UTC+6 bands. Switch on Civil time zones to compare. Standard-time examples: ${TIME_ZONE_EXAMPLES[String(n)]}.`
         })
       });
       labels.push({
@@ -567,30 +588,50 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
     addLabels(gEdge, 'timezones', labels, 8);
   }
 
-  function buildPlates() {
-    addLineFeatures(layerG.plates, PLATE_BOUNDARIES.map(b => {
-      const type = BOUNDARY_TYPES[b.type];
+  /**
+   * Tectonic plates from the PB2002 model: an invisible, hoverable area per plate (it lights up
+   * on hover), typed boundary lines coloured by kind, and labels for the named plates.
+   */
+  function buildPlates({ plates, boundaries }: PlateData) {
+    const gAreas = layerG.plates.append('g');
+    const areaLabels: LabelItem[] = [];
+    for (const plate of plates) {
+      const def = TECTONIC_PLATES[plate.code];
+      const largest = plate.geometry.coordinates
+        .map(poly => ({ poly, area: areaKm2({ type: 'MultiPolygon', coordinates: [poly] }) }))
+        .sort((a, b) => b.area - a.area)[0].poly;
+      const center = (def?.label ?? geoCentroid({ type: 'Polygon', coordinates: largest })) as LonLat;
+      const area = areaKm2(plate.geometry);
+      const areaText = area > 1e6 ? `${(area / 1e6).toFixed(1)} million km²` : `${Math.round(area / 1000) * 1000} km²`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const info = makeInfo({
+        name: plate.name, cls: 'Tectonic Plate', sub: def?.rank ?? 'Microplate', layer: 'plates', focus: center,
+        coordLabel: def ? 'Region' : 'Area', coord: def ? def.region : `≈ ${areaText}`, color: PLATE_LABEL_COLOR,
+        desc: `${def?.desc ?? 'A small plate (microplate) in the PB2002 plate model.'} Area ≈ ${areaText}.`
+      });
+      addBandFeatures(gAreas, [{ info, color: PLATE_LABEL_COLOR, opacity: 0, geom: () => path(plate.geometry) }]);
+      areaLabels.push({
+        text: plate.name.replace(/ \(.*\)/, ''), cls: def?.rank === 'Major plate' ? 'caps' : 'caps small', fill: PLATE_LABEL_COLOR,
+        prio: def?.rank === 'Major plate' ? 2 : def ? 6 : 8.5,
+        pos: () => place(center[0], center[1], 0, 3.5)
+      });
+    }
+
+    addLineFeatures(layerG.plates.append('g'), boundaries.map(b => {
+      const type = BOUNDARY_TYPES[b.kind];
+      const note = BOUNDARY_NOTES[[b.a, b.b].sort().join('-')];
+      const short = (code: string) => plateName(code).replace(/ Plate$/, '').replace(/ \(.*\)/, '');
       return {
-        color: type.color, width: 1.8, dash: type.dash, geom: lineGeom(densify(b.points)),
+        color: type.color, width: 1.8, dash: type.dash, geom: lineGeom(b.coords),
         info: makeInfo({
-          name: b.name, cls: 'Tectonic Plate', sub: `Plate boundary · ${b.type}`,
-          tag: TAGS.plate(b.type), layer: 'plates', focus: b.points[Math.floor(b.points.length / 2)],
-          coordLabel: 'Plates', coord: b.plates, color: type.color,
-          desc: `${type.desc}${b.note ? ' ' + b.note : ''} (Simplified outline.)`
+          name: `${short(b.a)} – ${short(b.b)} plate boundary`, cls: 'Tectonic Plate', sub: `Plate boundary · ${b.kind}`,
+          tag: TAGS.plate(b.kind), layer: 'plates', focus: b.coords[Math.floor(b.coords.length / 2)],
+          coordLabel: 'Type', color: type.color,
+          coord: `${BOUNDARY_CLASS_NAMES[b.cls] ?? b.cls} · ≈ ${b.speed} mm/yr · ${b.km.toLocaleString('en-US')} km long`,
+          desc: `${type.desc} Here the ${plateName(b.a)} and the ${plateName(b.b)} move about ${b.speed} mm a year relative to each other — roughly as fast as fingernails grow.${note ? ' ' + note : ''}`
         })
       };
     }));
-
-    // Plate names are hoverable labels that carry the plate descriptions.
-    addLabels(gLabels, 'plates', TECTONIC_PLATES.map((p): LabelItem => ({
-      text: p.name, cls: p.rank === 'Major plate' ? 'caps' : 'caps small', fill: PLATE_LABEL_COLOR,
-      prio: p.rank === 'Major plate' ? 2 : 6,
-      info: makeInfo({
-        name: p.name, cls: 'Tectonic Plate', sub: p.rank, coordLabel: 'Region', coord: p.region, desc: p.desc,
-        color: PLATE_LABEL_COLOR, layer: 'plates', focus: p.label
-      }),
-      pos: () => place(p.label[0], p.label[1], 0, 3.5)
-    })));
+    addLabels(gLabels, 'plates', areaLabels);
   }
 
   /** Day & night: the night hemisphere, the parallel the Sun is over today, and the subsolar point. */
@@ -656,28 +697,316 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
     });
   }
 
+  /* ---------- Countries and civil time zones ---------- */
+
+  let countryShapes: Country[] = [];
+  let focusName: string | null = null;
+  const countryPaths: { country: Country; el: SVGPathElement }[] = [];
+
+  /** Civil time layer: one fill per country, coloured by the clock time it uses on the chosen date. */
+  const civilEntries: {
+    country: Country; info: FeatureInfo; fill: SVGPathElement; stripes: SVGPathElement; label: LabelItem; el: SVGTextElement | null;
+  }[] = [];
+
+  /** Colour for a UTC offset: hue runs through the day (−12 h … +14 h). */
+  const civilColor = (minutes: number) => `hsl(${Math.round(((minutes / 60 + 12) / 26) * 300)}, 68%, 56%)`;
+
   /** Country outlines come from the world-atlas package; everything else works without them. */
   async function loadCountries() {
     try {
-      type Atlas = Topology<{ countries: GeometryCollection<{ name: string }> }>;
-      const world = (await import('world-atlas/countries-110m.json')).default as unknown as Atlas;
+      countryShapes = await loadCountryShapes();
       if (destroyed) return;
-      for (const f of feature(world, world.objects.countries).features) {
-        const c = geoCentroid(f);
+      for (const country of countryShapes) {
+        const c = country.centroid;
         const item: Drawable = {
-          geom: () => path(f),
+          geom: () => path(country.feature),
           info: makeInfo({
-            name: f.properties.name, cls: 'Country', coordLabel: 'Centre', layer: 'countries', focus: [c[0], c[1]],
+            name: country.name, cls: 'Country', coordLabel: 'Centre', layer: 'countries', focus: [c[0], c[1]], country: country.name,
             coord: `≈ ${fmtLat(c[1], 0)}, ${fmtLon(c[0], 0)}`, color: '#a8a291',
-            desc: 'Country outline from Natural Earth (1:110m scale).'
+            desc: 'Country outline from Natural Earth (1:110m scale). Use "Explore" to see its cities, plates and clock time.'
           })
         };
-        layerG.countries.append('path').datum(item).attr('class', 'dyn hit feat country');
+        const el = layerG.countries.append('path').datum(item).attr('class', 'dyn hit feat country').node() as SVGPathElement;
+        countryPaths.push({ country, el });
       }
       cb.onIndex(infos.slice());
       draw();
     } catch {
       if (!destroyed) cb.onStatus('Country outlines could not be loaded — the other layers still work.');
+      return;
+    }
+    // Then the data that builds on the countries: cities and time zones, and the plate model.
+    try {
+      const cityData = await loadCities();
+      if (destroyed) return;
+      buildCivilTime(cityData);
+      buildCities(cityData);
+      cb.onIndex(infos.slice());
+      draw();
+    } catch {
+      if (!destroyed) cb.onStatus('City and time-zone data could not be loaded.');
+    }
+    try {
+      const plateData = await loadPlates();
+      if (destroyed) return;
+      buildPlates(plateData);
+      applyVisibility();
+      cb.onIndex(infos.slice());
+      draw();
+    } catch {
+      if (!destroyed) cb.onStatus('Tectonic plate data could not be loaded.');
+    }
+  }
+
+  function buildCivilTime({ zones }: CityData) {
+    const labels: LabelItem[] = [];
+    for (const country of countryShapes) {
+      if (!zones[country.name]) continue;
+      const info = makeInfo({
+        name: country.name, cls: 'Civil Time Zone', coordLabel: 'Clock time', coord: '', desc: '', color: '#888',
+        layer: 'civiltime', tag: 'civil', focus: country.centroid
+      });
+      const item: BandItem = { info, color: '#888', opacity: CIVIL_TIME.opacity, geom: () => path(country.feature) };
+      const g = layerG.civiltime.append('g').attr('class', 'feat').datum(item);
+      const fill = g.append('path').attr('class', 'dyn hit band').style('--fo', String(CIVIL_TIME.opacity)).node() as SVGPathElement;
+      const stripes = g.append('path').attr('class', 'dyn civil-stripes').attr('fill', 'url(#wm-stripes)').node() as SVGPathElement;
+      const label: LabelItem = {
+        text: '', cls: 'civil-label', prio: 7.5,
+        pos: () => place(country.centroid[0], country.centroid[1], 0, 3.5)
+      };
+      labels.push(label);
+      civilEntries.push({ country, info, fill, stripes, label, el: null });
+    }
+    addLabels(gLabels, 'civiltime', labels);
+    for (const entry of civilEntries) entry.el = labelNodes.find(n => n.d === entry.label)?.el ?? null;
+    updateCivilTime();
+  }
+
+  /** Recolour and re-describe the civil time zones for the date chosen with the Sun controls. */
+  function updateCivilTime() {
+    const zones = loaded.cities?.zones;
+    if (!zones || !civilEntries.length) return;
+    const date = sunDate(sunState);
+    for (const entry of civilEntries) {
+      const z = zones[entry.country.name];
+      const offset = utcOffsetMinutes(z.main, date);
+      const standard = standardOffsetMinutes(z.main);
+      const color = civilColor(offset);
+      entry.fill.setAttribute('fill', color);
+      entry.stripes.style.display = CIVIL_TIME.stripeFractional && offset % 60 !== 0 ? '' : 'none';
+      const short = fmtOffset(offset).replace('UTC', '').replace('±0', '0');
+      entry.label.text = short;
+      entry.label.compact = short;
+      if (entry.el) entry.el.textContent = short;
+
+      // What the clocks say, compared with the 15° solar zone at the country's centre.
+      const nominal = Math.round(entry.country.centroid[0] / 15) * 60;
+      const otherOffsets = [...new Set(z.zones.map(tz => utcOffsetMinutes(tz, date)))].sort((a, b) => a - b);
+      const parts: string[] = [];
+      if (otherOffsets.length > 1) {
+        parts.push(`${entry.country.name} spans ${otherOffsets.length} clock times: ${otherOffsets.map(fmtOffset).join(', ')}. The colour shows the capital's zone.`);
+      } else {
+        parts.push(`All of ${entry.country.name} keeps one clock time.`);
+      }
+      if (offset % 60 !== 0) {
+        parts.push(`Its offset is not a whole hour — a ${offset % 30 === 0 ? 'half' : 'quarter'}-hour step chosen so one clock time suits the whole country.`);
+      }
+      if (offset !== nominal) {
+        const diff = Math.abs(offset - nominal);
+        parts.push(`The 15° solar zone at its centre (${fmtLon(entry.country.centroid[0], 0)}) would be ${fmtOffset(nominal)}, so clocks run ${diff >= 60 ? `${trimNum(diff / 60, 2)} h` : `${diff} min`} ${offset > nominal ? 'ahead of' : 'behind'} the Sun.`);
+      }
+      parts.push(offset > standard ? 'Daylight saving time is in effect on this date.' : 'Countries choose their clock time by law, so civil zones follow borders rather than meridians.');
+      Object.assign(entry.info, {
+        name: `${entry.country.name} · ${fmtOffset(offset)}`,
+        color,
+        coord: `${fmtOffset(offset)} — ${zoneLongName(z.main, date)} (${z.main})`,
+        desc: parts.join(' ')
+      });
+    }
+  }
+
+  /* ---------- Cities ---------- */
+
+  const cityEntries: { city: City; el: SVGPathElement; label: LabelItem }[] = [];
+
+  /** Highest Natural Earth rank shown at the current zoom. */
+  const maxCityRank = () => CITY_ZOOM_RANKS.filter(r => grab.k >= r.minZoom).at(-1)?.maxRank ?? 0;
+  const cityVisible = (city: City) => (focusName !== null && city.country === focusName) || city.rank <= maxCityRank();
+  const cityRadius = (city: City) =>
+    clamp(CITY_STYLE.minRadius + (CITY_STYLE.maxRadius - CITY_STYLE.minRadius) * Math.sqrt(city.population / 2e7), CITY_STYLE.minRadius, CITY_STYLE.maxRadius);
+  const cityColor = (city: City) =>
+    city.country === focusName ? CITY_STYLE.focusColor : city.capital ? CITY_STYLE.capitalColor : CITY_STYLE.color;
+
+  /** City tooltip text; built when shown, so the clock time follows the Sun controls. */
+  function cityDescription(city: City): string {
+    const parts = [`Population ≈ ${fmtPopulation(city.population)}.`];
+    if (city.tz) {
+      const date = sunDate(sunState);
+      parts.push(`Clock time ${fmtOffset(utcOffsetMinutes(city.tz, date))} (${zoneLongName(city.tz, date)}): ${clockTime(city.tz, date)} when it is ${fmtHour(sunState.hour)} UTC on ${fmtDay(sunState.day)}.`);
+    }
+    const plate = describePlatePosition(city.lonlat);
+    if (plate) parts.push(`It lies ${plate}.`);
+    return parts.join(' ');
+  }
+
+  function buildCities({ cities }: CityData) {
+    const labels: LabelItem[] = [];
+    for (const city of cities) {
+      const r = cityRadius(city);
+      const point: Feature<Point> = { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: city.lonlat } };
+      const info = makeInfo({
+        name: city.name, cls: 'City', sub: city.capital ? 'Capital city' : undefined, coordLabel: 'Location',
+        coord: `${fmtLonLat(city.lonlat)}${city.country ? ` · ${city.country}` : ''}`, desc: '',
+        color: city.capital ? CITY_STYLE.capitalColor : CITY_STYLE.color, layer: 'cities', tag: 'city', focus: city.lonlat, point: city.lonlat
+      });
+      Object.defineProperty(info, 'desc', { get: () => cityDescription(city), enumerable: true });
+      const item: Drawable = { info, geom: () => (cityVisible(city) ? path.pointRadius(r)(point) : null) };
+      const el = layerG.cities.append('path').datum(item)
+        .attr('class', `dyn hit feat city${city.capital ? ' capital' : ''}`).attr('fill', cityColor(city))
+        .node() as SVGPathElement;
+      const label: LabelItem = {
+        text: city.name, anchor: 'start', cls: `city-label${city.capital ? ' capital' : ''}`,
+        prio: city.capital ? 4.5 : 5.5,
+        pos: () => (cityVisible(city) ? place(city.lonlat[0], city.lonlat[1], r + 3, 3.5) : null)
+      };
+      labels.push(label);
+      cityEntries.push({ city, el, label });
+    }
+    addLabels(gLabels, 'cities', labels);
+  }
+
+  /* ---------- Earthquakes (live, USGS) ---------- */
+
+  let quakesState: 'idle' | 'loading' | 'ready' = 'idle';
+
+  interface QuakeFeature {
+    geometry: { coordinates: [number, number, number] };
+    properties: { mag: number; place: string | null; time: number; url: string };
+  }
+
+  /** Loads the feed the first time the layer is switched on. */
+  function ensureQuakes() {
+    if (!layers.quakes || quakesState !== 'idle') return;
+    quakesState = 'loading';
+    cb.onStatus('Loading earthquakes from the US Geological Survey…');
+    fetch(QUAKES.feedUrl)
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data: { features: QuakeFeature[] }) => {
+        if (destroyed) return;
+        buildQuakes(data.features);
+        quakesState = 'ready';
+        cb.onStatus(`${data.features.length} earthquakes of magnitude 4.5+ in the past 30 days · live data: USGS`);
+        draw();
+      })
+      .catch(() => {
+        quakesState = 'idle';
+        if (!destroyed) cb.onStatus('Earthquake data could not be loaded from USGS — check the connection and switch the layer on again.');
+      });
+  }
+
+  function buildQuakes(features: QuakeFeature[]) {
+    const g = layerG.quakes.append('g');
+    // Biggest first, so smaller ones stay on top and remain hoverable.
+    for (const q of [...features].sort((a, b) => b.properties.mag - a.properties.mag)) {
+      const [lon, lat, depth] = q.geometry.coordinates;
+      const bandIndex = QUAKES.depthBands.findIndex(b => depth <= b.maxKm);
+      const band = QUAKES.depthBands[bandIndex];
+      const r = QUAKES.radius.base + QUAKES.radius.perMagnitude * Math.max(0, q.properties.mag - 4.5);
+      const point: Feature<Point> = { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } };
+      const when = new Date(q.properties.time);
+      const days = Math.max(0, Math.round((Date.now() - q.properties.time) / 864e5));
+      const info = makeInfo({
+        name: `Magnitude ${q.properties.mag.toFixed(1)} earthquake`, cls: 'Earthquake', sub: band.label,
+        coordLabel: 'Where', coord: q.properties.place ?? fmtLonLat([lon, lat]), desc: '', color: band.color,
+        layer: 'quakes', tag: `quake:${bandIndex}`, focus: [lon, lat]
+      });
+      Object.defineProperty(info, 'desc', {
+        enumerable: true,
+        get: () => {
+          const plate = describePlatePosition([lon, lat]);
+          return `${when.toUTCString().replace(':00 GMT', ' UTC')} (${days === 0 ? 'today' : `${plural(days, 'day')} ago`}), ${Math.round(depth)} km deep.`
+            + (plate ? ` It struck ${plate}.` : '')
+            + ' Most earthquakes happen along plate boundaries; deep ones occur only where a plate is sinking (subduction).';
+        }
+      });
+      g.append('path').datum<Drawable>({ info, tag: info.tag, geom: () => path.pointRadius(r)(point) })
+        .attr('class', 'dyn hit feat quake').attr('fill', band.color);
+    }
+    cb.onIndex(infos.slice());
+  }
+
+  /* ---------- Country focus ("Explore this country") ---------- */
+
+  function focusCountry(name: string | null) {
+    focusName = name;
+    for (const { country, el } of countryPaths) el.classList.toggle('focus', country.name === name);
+    for (const { city, el, label } of cityEntries) {
+      el.setAttribute('fill', cityColor(city));
+      el.classList.toggle('focus', city.country === name);
+      label.prio = city.country === name ? (city.capital ? 0.4 : 0.6) : city.capital ? 4.5 : 5.5;
+    }
+    const shape = countryShapes.find(c => c.name === name);
+    if (shape) {
+      pinned = null;
+      if (globeMode) flyTo(shape.centroid[0], shape.centroid[1], () => zoomToShape(shape.feature));
+      else zoomToShape(shape.feature);
+    }
+    draw();
+  }
+
+  /** Zoom so a shape fills most of the map (flat maps also pan to it). */
+  function zoomToShape(shape: Country['feature']) {
+    const [[x0, y0], [x1, y1]] = path.bounds(shape);
+    if (![x0, y0, x1, y1].every(Number.isFinite)) return;
+    const w = frame.x1 - frame.x0, h = frame.y1 - frame.y0;
+    const fill = 0.75 / Math.max((x1 - x0) / w, (y1 - y0) / h, 1e-6);
+    const k = clamp(grab.k * fill, ZOOM.min, ZOOM.max);
+    if (globeMode) {
+      svg.transition().duration(500).call(zoomer.scaleTo, k);
+    } else {
+      // Position of the shape's centre in un-zoomed map coordinates.
+      const bx = ((x0 + x1) / 2 - grab.x) / grab.k, by = ((y0 + y1) / 2 - grab.y) / grab.k;
+      const t = zoomIdentity.translate((frame.x0 + frame.x1) / 2 - bx * k, (frame.y0 + frame.y1) / 2 - by * k).scale(k);
+      svg.transition().duration(600).call(zoomer.transform, t);
+    }
+  }
+
+  /* ---------- Distance tool ---------- */
+
+  let measuring = false;
+  const measurePoints: LonLat[] = [];
+
+  function setMeasure(on: boolean) {
+    measuring = on;
+    measurePoints.length = 0;
+    svg.classed('measuring', on);
+    gMeasure.style('display', on ? '' : 'none');
+    cb.onMeasure(on ? { points: [] } : null);
+    draw();
+  }
+
+  function addMeasurePoint(ll: LonLat) {
+    if (measurePoints.length >= 2) measurePoints.length = 0;      // a third click starts a new measurement
+    measurePoints.push(ll);
+    cb.onMeasure({ points: measurePoints.slice() });
+    draw();
+  }
+
+  function drawMeasure() {
+    if (!measuring) return;
+    const [a, b] = measurePoints;
+    measureLine.attr('d', a && b ? path({ type: 'LineString', coordinates: [a, b] }) : null);
+    measureEnds.forEach((end, i) => {
+      const p = measurePoints[i] && place(measurePoints[i][0], measurePoints[i][1]);
+      end.style('display', p ? '' : 'none');
+      if (p) end.attr('cx', p[0]).attr('cy', p[1]);
+    });
+    const mid = a && b ? geoInterpolate(a, b)(0.5) as LonLat : null;
+    const p = mid && place(mid[0], mid[1]);
+    measureLabel.style('display', p ? '' : 'none');
+    if (p && a && b) {
+      const km = geoDistance(a, b) * EARTH_RADIUS_KM;
+      measureLabel.attr('x', p[0]).attr('y', p[1]).text(`${Math.round(km).toLocaleString('en-US')} km`);
     }
   }
 
@@ -802,6 +1131,7 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
     const pinAt = pinned && place(pinned[0], pinned[1]);
     pinMark.style('display', pinAt ? '' : 'none');
     if (pinAt) pinMark.attr('cx', pinAt[0]).attr('cy', pinAt[1]);
+    drawMeasure();
   }
 
   /**
@@ -809,6 +1139,7 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
    * labels apart (text keeps its size), so hidden ones reappear.
    */
   function declutterLabels() {
+    labelNodes.sort((a, b) => (a.d.prio ?? 9) - (b.d.prio ?? 9));   // priorities change (country focus)
     for (const { el } of labelNodes) el.style.visibility = '';
     const rects = labelNodes.map(({ el }) => (el.style.display === 'none' ? null : el.getBoundingClientRect()));
     const placed: DOMRect[] = [], pad = 2;
@@ -826,6 +1157,7 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       return layers[this.getAttribute('data-layer') as LayerId] ? null : 'none';
     });
     svg.classed('big-labels', layers.bigLabels);
+    ensureQuakes();
     declutterLabels();
     if (!layers.tooltips) hideTooltip();
   }
@@ -949,7 +1281,19 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       seen.add(d.info);
       out.push({ info: d.info, el });
     }
-    return out;
+    // Most specific first: places, then lines, then the country, then wide zones, grid lines last.
+    return out.sort((a, b) => hoverRank(a.info) - hoverRank(b.info));
+  }
+
+  /** Hover priority of a feature (lower comes first in the tooltip). */
+  function hoverRank(info: FeatureInfo): number {
+    if (info.cls === 'City' || info.cls === 'Earthquake' || info.name === 'Subsolar point') return 0;
+    if (info.cls.startsWith('Graticule')) return 4;
+    if (info.cls === 'Country') return 2;
+    const isLine = info.sub?.startsWith('Plate boundary') || info.cls === 'Ocean Current' || info.layer === 'special'
+      || info.name === 'Sun\'s overhead latitude';
+    if (isLine) return 1;
+    return 3;                                                       // zones, belts, plates, night side
   }
 
   /** Geographic position at a point of the SVG, or null when it is off the Earth. */
@@ -970,8 +1314,11 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
   }
 
   let tipKey = '';                       // identifies the current tooltip content
+  let showTimer = 0;                     // pending "show tooltip" after the hover delay
+  const HOVER_DELAY_MS = 180;
   let lastPointerType = 'mouse';
   function hideTooltip() {
+    window.clearTimeout(showTimer);
     stickyOpen = false;
     if (!tipKey) return;
     tipKey = '';
@@ -1031,20 +1378,30 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       cb.onCursor(ll ? fmtLonLat(ll) : '—');
       if (event.pointerType === 'touch') return;              // touch screens use tap instead of hover
 
-      // Desktop: the tooltip follows the pointer and lists everything under it.
+      // Desktop: the tooltip follows the pointer. It appears after a short rest (so it does not
+      // flash while the pointer sweeps across the map) and then updates as the pointer moves.
       const stack = featuresAt(event.clientX, event.clientY);
       setHot(stack.length ? stack[0].el : null);
+      window.clearTimeout(showTimer);
       if (!layers.tooltips || !stack.length || dragging) { hideTooltip(); return; }
       const key = stack.map(s => s.info.key).join(',');
-      if (key !== tipKey) {
+      const tip = { infos: stack.map(s => s.info), x: event.clientX, y: event.clientY, sticky: false };
+      if (!tipKey) {
+        showTimer = window.setTimeout(() => { tipKey = key; cb.onTooltip(tip); }, HOVER_DELAY_MS);
+      } else if (key !== tipKey) {
         tipKey = key;
-        cb.onTooltip({ infos: stack.map(s => s.info), x: event.clientX, y: event.clientY, sticky: false });
+        cb.onTooltip(tip);
       } else {
         cb.onTooltipMove(event.clientX, event.clientY);
       }
     })
     .on('click', (event: MouseEvent) => {
       const [x, y] = pointer(event, svgNode);
+      if (measuring) {
+        const ll = lonLatAtPoint(x, y);
+        if (ll) addMeasurePoint(ll);
+        return;
+      }
       const stack = selectAt(event.clientX, event.clientY, lonLatAtPoint(x, y));
       // Touch: a tap opens the tooltip; it stays until the next tap elsewhere.
       if (lastPointerType !== 'mouse' && layers.tooltips && stack.length) {
@@ -1081,7 +1438,6 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
   buildWinds();
   buildCurrents();
   buildTimeZones();
-  buildPlates();
   buildSun();
   labelNodes.sort((a, b) => (a.d.prio ?? 9) - (b.d.prio ?? 9));
 
@@ -1115,6 +1471,7 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       if (next.day === sunState.day && next.hour === sunState.hour) return;
       sunState = { ...next };
       updateSun();
+      updateCivilTime();
       draw();
     },
     zoomBy,
@@ -1128,12 +1485,15 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       setRotation(-point[0], -point[1]);
       draw();
     },
+    focusCountry,
+    setMeasure,
     dismissTooltip: hideTooltip,
     destroy() {
       destroyed = true;
       spinTimer.stop();
       observer.disconnect();
       cancelAnimationFrame(resizeFrame);
+      window.clearTimeout(showTimer);
       svg.interrupt().interrupt('fly');
       svg.on('.zoom', null);
       svg.remove();
