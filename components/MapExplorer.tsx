@@ -326,7 +326,9 @@ export function MapExplorer() {
     navigator.geolocation.getCurrentPosition(
       position => {
         setLayers(l => (l.spin ? { ...l, spin: false } : l));
-        mapRef.current?.inspectPoint([position.coords.longitude, position.coords.latitude], 'Your location');
+        const here: LonLat = [position.coords.longitude, position.coords.latitude];
+        mapRef.current?.setUserLocation(here, position.coords.accuracy);
+        mapRef.current?.inspectPoint(here, 'Your location');
         setToast(null);
       },
       error => notify(error.code === error.PERMISSION_DENIED

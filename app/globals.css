@@ -134,6 +134,25 @@ body {
   paint-order: stroke; stroke: var(--halo); stroke-width: 4px; stroke-linejoin: round;
 }
 
+/* "You are here" marker (My location) */
+.world-map .user-location .user-dot { fill: #2563eb; stroke: #fff; stroke-width: 2.5; cursor: help; filter: drop-shadow(0 1px 3px rgba(15, 23, 42, 0.45)); }
+.world-map .user-location .user-halo { fill: rgba(37, 99, 235, 0.18); stroke: rgba(37, 99, 235, 0.55); stroke-width: 1; pointer-events: none; }
+.world-map .user-location .user-pulse {
+  fill: none; stroke: #2563eb; stroke-width: 2; pointer-events: none;
+  transform-box: fill-box; transform-origin: center; animation: user-pulse 2s ease-out infinite;
+}
+.world-map .user-location .user-label {
+  font-size: 12.5px; font-weight: 800; fill: #1d4ed8; pointer-events: none;
+  paint-order: stroke; stroke: rgba(255, 255, 255, 0.95); stroke-width: 4px; stroke-linejoin: round;
+}
+@keyframes user-pulse {
+  from { transform: scale(1); opacity: 0.9; }
+  to { transform: scale(3.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .world-map .user-location .user-pulse { animation: none; opacity: 0; }
+}
+
 /* Labels: text with a light halo so it stays readable over any layer. */
 .world-map .lbl {
   font-size: 10.5px; font-weight: 600; pointer-events: none;

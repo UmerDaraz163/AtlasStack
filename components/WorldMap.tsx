@@ -23,6 +23,8 @@ export interface WorldMapHandle {
   focusCountry: (name: string | null) => void;
   /** Distance tool on/off. */
   setMeasure: (on: boolean) => void;
+  /** Mark the user's own position; null removes the marker. */
+  setUserLocation: (point: LonLat | null, accuracyM?: number) => void;
 }
 
 interface WorldMapProps {
@@ -104,7 +106,8 @@ export const WorldMap = memo(forwardRef<WorldMapHandle, WorldMapProps>(function 
     getCenter: () => engineRef.current?.getCenter() ?? null,
     setCenter: point => engineRef.current?.setCenter(point),
     focusCountry: name => engineRef.current?.focusCountry(name),
-    setMeasure: on => engineRef.current?.setMeasure(on)
+    setMeasure: on => engineRef.current?.setMeasure(on),
+    setUserLocation: (point, accuracyM) => engineRef.current?.setUserLocation(point, accuracyM)
   }), []);
 
   // A tapped (sticky) tooltip closes on Escape or when the user taps anywhere outside the map.

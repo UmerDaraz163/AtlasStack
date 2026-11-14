@@ -85,6 +85,8 @@ export interface MapEngine {
   focusCountry: (name: string | null) => void;
   /** Distance tool on/off: while on, clicks place the two end points. */
   setMeasure: (on: boolean) => void;
+  /** Mark the user's own position ("You are here"); null removes the marker. */
+  setUserLocation: (point: LonLat | null, accuracyM?: number) => void;
   dismissTooltip: () => void;
   destroy: () => void;
 }
@@ -222,6 +224,15 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
   const sphereOutline = gMap.append('path').attr('class', 'sphere-outline');
   const gLabels: GSel = gMap.append('g').attr('class', 'labels').attr('data-layer', 'labels');
   const pinMark = gMap.append('circle').attr('class', 'pin').attr('r', 4).style('display', 'none');
+  // "You are here": pulsing halo, a white-ringed blue dot (hoverable) and a label. Drawn above
+  // labels so it is never hidden, and kept separate from the click pin so it stays put.
+  const gUser = gMap.append('g').attr('class', 'user-location').style('display', 'none');
+  gUser.append('circle').attr('class', 'user-pulse').attr('r', 9);
+  gUser.append('circle').attr('class', 'user-halo').attr('r', 14);
+  const userDot = gUser.append('circle').attr('class', 'user-dot hit').attr('r', 7);
+  const userLabel = gUser.append('text').attr('class', 'user-label').attr('x', 13).attr('dy', 4.5).text('You are here');
+  let userLocation: LonLat | null = null;
+
   // Distance tool: great-circle line, its two ends and the distance label.
   const gMeasure = gMap.append('g').attr('class', 'measure').style('display', 'none');
   const measureLine = gMeasure.append('path').attr('class', 'measure-line');
@@ -1128,7 +1139,17 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
       sunMarker.style('display', sunAt ? '' : 'none');
       if (sunAt) sunMarker.attr('transform', `translate(${xy(sunAt)})`);
     }
-    const pinAt = pinned && place(pinned[0], pinned[1]);
+    const userAt = userLocation && place(userLocation[0], userLocation[1]);
+    gUser.style('display', userAt ? '' : 'none');
+    if (userAt) {
+      gUser.attr('transform', `translate(${xy(userAt)})`);
+      // Put the label on the side with more room.
+      const right = userAt[0] < (frame.x0 + frame.x1) / 2 + (frame.x1 - frame.x0) * 0.3;
+      userLabel.attr('x', right ? 13 : -13).attr('text-anchor', right ? 'start' : 'end');
+    }
+    // The click pin is not needed on top of the "You are here" marker.
+    const pinOnUser = !!pinned && !!userLocation && geoDistance(pinned, userLocation) < 1e-6;
+    const pinAt = pinned && !pinOnUser && place(pinned[0], pinned[1]);
     pinMark.style('display', pinAt ? '' : 'none');
     if (pinAt) pinMark.attr('cx', pinAt[0]).attr('cy', pinAt[1]);
     drawMeasure();
@@ -1287,6 +1308,7 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
 
   /** Hover priority of a feature (lower comes first in the tooltip). */
   function hoverRank(info: FeatureInfo): number {
+    if (info.cls === 'Your location') return -1;
     if (info.cls === 'City' || info.cls === 'Earthquake' || info.name === 'Subsolar point') return 0;
     if (info.cls.startsWith('Graticule')) return 4;
     if (info.cls === 'Country') return 2;
@@ -1487,6 +1509,20 @@ export function createMapEngine(container: HTMLElement, init: EngineInit, cb: En
     },
     focusCountry,
     setMeasure,
+    setUserLocation(point, accuracyM) {
+      userLocation = point;
+      if (point) {
+        const accuracy = accuracyM ? ` Accurate to about ${accuracyM < 1000 ? `${Math.round(accuracyM)} m` : `${(accuracyM / 1000).toFixed(1)} km`}.` : '';
+        userDot.datum<Drawable>({
+          geom: () => null,
+          info: makeInfo({
+            name: 'You are here', cls: 'Your location', coord: fmtLonLat(point), color: '#2563eb', focus: point, point,
+            desc: `Your position, as reported by your browser.${accuracy} It is used only on this device and is not saved or sent anywhere.`
+          })
+        });
+      }
+      draw();
+    },
     dismissTooltip: hideTooltip,
     destroy() {
       destroyed = true;
